@@ -2,6 +2,17 @@
 
 Use this as a risk checklist. Do not mechanically report every item. Report only issues supported by the PR diff, surrounding code, tests, or project context.
 
+## Highest-signal pre-landing checks
+
+Run these before lower-severity review passes:
+
+- **SQL/data safety:** raw SQL interpolation, unsafe migrations, data loss, missing backfills, nullable/non-nullable drift, code expecting schema before deploy.
+- **Race/concurrency:** read-check-write without uniqueness/atomic update, non-atomic state transitions, duplicate creation hazards, idempotency gaps.
+- **LLM/tool trust boundaries:** LLM output written/fetched/rendered without validation, generated URLs fetched without allowlists, stored prompt injection, tool output accepted without type/shape checks.
+- **Shell/path injection:** interpolated subprocess commands, `shell=True`, unsafe path construction, file operations on user-controlled paths.
+- **Enum/value completeness:** new statuses/types/tiers handled by every consumer, allowlist, switch/case/default, UI label, persistence path, and test.
+- **Auth/privacy:** object-level authorization, leaked secrets/PII, overbroad scopes, sensitive data in logs/errors/responses.
+
 ## Correctness and regressions
 
 Look for:

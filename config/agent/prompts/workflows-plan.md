@@ -1,5 +1,5 @@
 ---
-description: Transform feature descriptions into well-structured implementation plans
+description: Transform feature descriptions into concrete implementation plans with scope, failure modes, and validation
 argument-hint: "[feature description, bug report, brainstorm file, or improvement idea]"
 ---
 
@@ -18,39 +18,57 @@ If the input is empty, ask the user what they want to plan and wait.
 - If the input is plain text, look for a recent matching brainstorm in `docs/brainstorms/` and use it when clearly relevant.
 - Ask clarifying questions only when they materially change the plan.
 - Use the current year, **2026**, when dating plan files.
+- Prefer the smallest complete version: no needless platform-building, but do not leave easy edge cases/tests undone.
 
 ## Workflow
 
 ### 1. Understand the request
 
-- Decide whether the input is:
-  - a plain-language request
-  - a brainstorm document
-  - an existing plan/spec that needs restructuring
-- If there is a relevant brainstorm, treat it as the primary source of truth.
+Classify the input as:
 
-### 2. Gather local context
+- feature / product change,
+- bug / correctness fix,
+- refactor / architecture improvement,
+- test / tooling / release work,
+- existing plan/spec that needs restructuring.
 
-Use local repo research first:
-- `find`
-- `grep`
-- `read`
+Capture in one sentence: who is affected, what changes, and how we know it is done.
 
-If the codebase context is non-trivial, use `subagent` with `agent: "scout"` for targeted recon.
+### 2. Ground in local context before planning
+
+Use targeted local repo research first: `find`, `rg`, `git diff`, focused `read`.
+
+Hard requirement: read at least one relevant file, symbol, doc, or config before drafting technical steps. Do not ask the user what file to inspect unless you genuinely cannot infer it.
 
 Focus on:
-- existing patterns
-- likely files/components involved
-- constraints from current architecture
-- nearby tests or examples to follow
 
-### 3. Draft the plan
+- existing code that already solves part of the problem,
+- current patterns and conventions,
+- likely integration points and tests,
+- data/API/deployment boundaries,
+- instructions in repo docs.
 
-Create a concrete, execution-ready plan.
+If the context is non-trivial, use a `scout` subagent for targeted recon.
 
-If a second planning pass would improve quality, optionally use `subagent` with `agent: "planner"`, passing along the gathered repo context.
+### 3. Scope challenge
 
-### 4. Write the plan file
+Before drafting, answer:
+
+- What is the minimum set of changes that delivers the value?
+- What is explicitly **not** in scope?
+- What existing code/flows should be reused instead of rebuilt?
+- Does the plan introduce >8 files or >2 new services/classes? If yes, challenge the complexity and propose a smaller path.
+- What is the blast radius and rollback/backout path?
+
+### 4. Draft the plan
+
+Create a concrete, execution-ready plan. Include failure modes and tests, not just happy-path implementation.
+
+For non-trivial data flow, state machines, or pipelines, include an ASCII diagram. For complex implementation, identify where inline code comments/diagrams should be maintained.
+
+If a second planning pass would improve quality, optionally use a `planner` or `reviewer` subagent, then synthesize.
+
+### 5. Write the plan file
 
 Write the result to:
 
@@ -60,16 +78,21 @@ Use a descriptive slug.
 
 ## Plan document structure
 
+```markdown
 # <Title>
 
 ## Goal
 One clear sentence describing the outcome.
 
 ## Background / Existing Patterns
-Relevant context, examples, and constraints from the repo.
+Concrete repo context, paths read, examples, and constraints.
+
+## What Already Exists
+Existing code/flows that solve part of the problem and how the plan reuses them.
 
 ## Scope
-What is in scope and out of scope.
+### In scope
+### Not in scope
 
 ## Implementation Plan
 Numbered, actionable steps.
@@ -77,29 +100,27 @@ Numbered, actionable steps.
 ## Files Likely to Change
 Concrete file paths when known, otherwise likely areas.
 
-## Risks / Open Questions
-Anything that could block or complicate implementation.
+## Failure Modes / Edge Cases
+For each new path, list realistic failures and how they are handled or tested.
 
-## Validation
-How the finished work should be verified.
+## Tests / Validation
+Unit, integration, regression, manual/browser, and release checks as applicable.
+
+## Parallelization
+State whether work should be sequential or split into independent lanes.
 
 ## Rollout / Backout
-Only when relevant for risky or user-facing changes.
+Only when relevant for risky, data, deploy, or user-facing changes.
 
-## Quality bar
-
-The plan should be:
-- concrete
-- easy to execute
-- grounded in actual repo patterns
-- explicit about validation
-- free of references to agents/skills/tools that are not installed
+## Risks / Open Questions
+Anything that could block or materially change implementation.
+```
 
 ## Handoff
 
 After writing the plan, summarize:
-- plan file path
-- top 3-6 implementation steps
-- major risks/open questions
 
-Then ask whether to proceed to `/workflows-work`.
+- plan file path,
+- top 3-6 implementation steps,
+- major risks/open questions,
+- recommended next command (`/workflows-work`, `/review`, or a specific test).
