@@ -24,6 +24,7 @@
       "./src/extensions/cost-audit.ts",
       "./src/extensions/copy-last-as-md.ts",
       "./src/extensions/verify-command.ts",
+      "./src/extensions/guard.ts",
       "./src/extensions/session-plan/index.ts",
       "./src/extensions/goal-loop.ts",
       "./src/extensions/subagent/index.ts",

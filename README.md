@@ -38,7 +38,7 @@ Run `/reload` in Pi after changing package paths.
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 Bundled default subagents live in `agents/*.md`.
 
