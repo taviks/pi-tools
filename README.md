@@ -38,9 +38,27 @@ Run `/reload` in Pi after changing package paths.
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 Bundled default subagents live in `agents/*.md`.
+
+### Durable memory
+
+The root package includes a tiny explicit memory layer backed by Markdown files in `~/.pi/agent/memory/`:
+
+```bash
+/memory status
+/memory add decision Use Markdown memory before adding SQLite or GBrain.
+/memory add-preference Prefer concise final answers unless detail is requested. --global
+/memory search markdown memory
+/memory recent
+```
+
+Memory types: `decision`, `learning`, `preference`, `solution`, `pattern`, `pitfall`. Short aliases are available: `/memory add-decision`, `/memory add-learning`, `/memory add-preference`, `/memory add-solution`, `/memory add-pattern`, `/memory add-pitfall`.
+
+Scope defaults are intentionally simple: `preference` defaults to global memory; all other types default to project/workspace memory. Override with `--global` or `--project`.
+
+LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol, relevant local memory snippets for substantial debugging/planning/review/architecture prompts, and a low-noise post-run reminder when a run looks memory-worthy but nothing was captured. Memory capture remains explicit or confirmation-oriented; there is no always-on entity detector, cron, or embedding dependency.
 
 ## Companion packages
 
