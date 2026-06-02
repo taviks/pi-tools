@@ -8,7 +8,7 @@ import { Type } from "typebox"
 
 const MEMORY_TYPES = ["decision", "learning", "preference", "solution", "pattern", "pitfall"] as const
 const MEMORY_ADD_COMMANDS = MEMORY_TYPES.map((type) => `add-${type}`)
-const MEMORY_COMMANDS = ["status", "add", ...MEMORY_ADD_COMMANDS, "search", "recent", "clear"] as const
+const MEMORY_COMMANDS = ["status", "add", ...MEMORY_ADD_COMMANDS, "search", "recent", "harvest", "accept", "clear"] as const
 
 type MemoryType = (typeof MEMORY_TYPES)[number]
 type MemoryScope = "global" | "project" | "all"
@@ -26,6 +26,8 @@ const SCOPE_COMPLETIONS = [
 	{ value: "--global", label: "--global (all projects)" },
 ] as const
 const POST_RUN_MEMORY_KEYWORDS = /\b(root cause|fixed by|solution|solved|lesson|learned|learning|pitfall|avoid|decision|decided|tradeoff|preference|pattern|regression|recurring|remember)\b/i
+const MAX_HARVEST_CANDIDATES = 5
+const MAX_HARVEST_CONTENT_CHARS = 900
 
 type NotifyKind = "info" | "warning" | "error" | "success"
 
@@ -52,6 +54,26 @@ interface MemoryRecord {
 interface SearchResult extends MemoryRecord {
 	score: number
 	snippet: string
+}
+
+interface HarvestCandidate {
+	type: MemoryType
+	scope: Exclude<MemoryScope, "all">
+	title: string
+	content: string
+	reason: string
+}
+
+interface LastRunSnapshot {
+	prompt: string
+	assistantText: string
+	messages: unknown[]
+	createdAt: string
+}
+
+interface PendingHarvest {
+	createdAt: string
+	candidates: HarvestCandidate[]
 }
 
 const MEMORY_HOME = path.resolve(process.env.PI_MEMORY_HOME || path.join(os.homedir(), ".pi", "agent", "memory"))
@@ -475,6 +497,12 @@ function memoryArgumentCompletions(prefix: string): Array<{ value: string; label
 		}
 	}
 
+	if (command === "accept") {
+		const values = ["all", "1", "2", "3", "4", "5"].map((value) => ({ value: `accept ${value}`, label: value === "all" ? "all pending candidates" : `candidate ${value}` }))
+		if (tokens.length === 1 && hasTrailingSpace) return values
+		if (tokens.length === 2 && !hasTrailingSpace) return completionItems(values, `accept ${tokens[1]}`)
+	}
+
 	if (command === "search" || command === "recent") {
 		const last = tokens[tokens.length - 1] || ""
 		const previous = tokens[tokens.length - 2] || ""
@@ -558,7 +586,7 @@ function memoryStatus(cwd: string): string {
 		`Workspace ID: ${workspace.workspaceId} (${workspace.workspaceIdSource})`,
 		`Global memories: ${globalCount}`,
 		`Project memories: ${projectCount}`,
-		"Commands: /memory add <type> <text>, /memory search <query>, /memory recent, /memory status",
+		"Commands: /memory add <type> <text>, /memory harvest, /memory accept <n|all>, /memory search <query>, /memory recent, /memory status",
 	].join("\n")
 }
 
@@ -636,22 +664,140 @@ function shouldSuggestPostRunCapture(prompt: string, assistantText: string, mess
 	return shouldPrefetchMemory(prompt) || hasToolSignal(messages)
 }
 
+function normalizedLine(line: string): string {
+	return line
+		.trim()
+		.replace(/^[-*•]\s+/, "")
+		.replace(/^\d+[.)]\s+/, "")
+		.trim()
+}
+
+function meaningfulLines(text: string): string[] {
+	return text
+		.split(/\r?\n/)
+		.map(normalizedLine)
+		.filter((line) => line.length >= 12)
+		.filter((line) => !/^```/.test(line))
+		.filter((line) => !/^checks? (passed|succeeded)/i.test(line))
+		.slice(0, 80)
+}
+
+function truncateText(text: string, maxLength: number): string {
+	const trimmed = text.trim()
+	return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1).trim()}…` : trimmed
+}
+
+function candidateTitle(type: MemoryType, lines: string[]): string {
+	const first = lines.find(Boolean) || `${type} from agent run`
+	return truncateText(first.replace(/^(root cause|fix|fixed|decision|lesson|learning|pitfall|pattern|preference):\s*/i, ""), 90)
+}
+
+function candidateFromLines(type: MemoryType, lines: string[], reason: string): HarvestCandidate | undefined {
+	const uniqueLines = Array.from(new Set(lines.map(normalizedLine).filter(Boolean))).slice(0, 5)
+	if (uniqueLines.length === 0) return undefined
+	const content = truncateText(uniqueLines.join("\n"), MAX_HARVEST_CONTENT_CHARS)
+	const title = candidateTitle(type, uniqueLines)
+	if (hasSecretLikeContent(`${title}\n${content}`)) return undefined
+	return { type, scope: defaultScopeFor(type), title, content, reason }
+}
+
+function inferMemoryType(text: string): MemoryType {
+	if (/\b(preference|prefer|default to)\b/i.test(text)) return "preference"
+	if (/\b(root cause|fixed|fix|solved|solution|bug|error|crash|regression)\b/i.test(text)) return "solution"
+	if (/\b(decision|decided|choose|chose|tradeoff|use .* over)\b/i.test(text)) return "decision"
+	if (/\b(pitfall|avoid|trap|gotcha|do not|don't)\b/i.test(text)) return "pitfall"
+	if (/\b(pattern|workflow|repeatable|reusable)\b/i.test(text)) return "pattern"
+	return "learning"
+}
+
+function harvestMemoryCandidates(snapshot: LastRunSnapshot): HarvestCandidate[] {
+	const assistantLines = meaningfulLines(snapshot.assistantText)
+	const combined = `${snapshot.prompt}\n${snapshot.assistantText}`
+	const patterns: Array<{ type: MemoryType; reason: string; pattern: RegExp }> = [
+		{ type: "preference", reason: "preference language in the run", pattern: /\b(preference|prefer|default to)\b/i },
+		{ type: "solution", reason: "root-cause/fix language in the run", pattern: /\b(root cause|fixed|fix|solved|solution|bug|error|crash|regression)\b/i },
+		{ type: "decision", reason: "decision/tradeoff language in the run", pattern: /\b(decision|decided|choose|chose|tradeoff|use .* over)\b/i },
+		{ type: "pitfall", reason: "pitfall/avoidance language in the run", pattern: /\b(pitfall|avoid|trap|gotcha|do not|don't)\b/i },
+		{ type: "pattern", reason: "reusable-pattern language in the run", pattern: /\b(pattern|workflow|repeatable|reusable)\b/i },
+		{ type: "learning", reason: "learning/lesson language in the run", pattern: /\b(learned|lesson|learning)\b/i },
+	]
+
+	const candidates: HarvestCandidate[] = []
+	const seen = new Set<string>()
+	for (const item of patterns) {
+		if (!item.pattern.test(combined)) continue
+		const matched = assistantLines.filter((line) => item.pattern.test(line))
+		const fallback = assistantLines.slice(0, 5)
+		const candidate = candidateFromLines(item.type, matched.length > 0 ? matched : fallback, item.reason)
+		if (!candidate) continue
+		const key = `${candidate.type}:${candidate.content.toLowerCase()}`
+		if (seen.has(key)) continue
+		seen.add(key)
+		candidates.push(candidate)
+		if (candidates.length >= MAX_HARVEST_CANDIDATES) return candidates
+	}
+
+	if (candidates.length === 0 && assistantLines.length > 0) {
+		const type = inferMemoryType(combined)
+		const candidate = candidateFromLines(type, assistantLines.slice(0, 6), "fallback summary from the last run")
+		if (candidate) candidates.push(candidate)
+	}
+	return candidates.slice(0, MAX_HARVEST_CANDIDATES)
+}
+
+function formatHarvestCandidate(candidate: HarvestCandidate, index: number): string {
+	return [
+		`${index}. [${candidate.scope}/${candidate.type}] ${candidate.title}`,
+		`   reason: ${candidate.reason}`,
+		...candidate.content.split("\n").map((line) => `   ${line}`),
+	].join("\n")
+}
+
+function formatHarvest(candidates: HarvestCandidate[]): string {
+	if (candidates.length === 0) return "No memory candidates found in the last run."
+	return [
+		"Memory harvest candidates",
+		"Nothing has been saved yet. Review, then run /memory accept <number|all>.",
+		"",
+		...candidates.map((candidate, index) => formatHarvestCandidate(candidate, index + 1)),
+	].join("\n")
+}
+
+function parseAcceptSelection(input: string, count: number): number[] {
+	const trimmed = input.trim().toLowerCase()
+	if (!trimmed) throw new Error("Usage: /memory accept <number|all>")
+	if (trimmed === "all") return Array.from({ length: count }, (_, index) => index)
+	const indices = trimmed
+		.split(/[\s,]+/)
+		.map((part) => Number.parseInt(part, 10))
+		.filter((value) => Number.isInteger(value))
+		.map((value) => value - 1)
+	const unique = Array.from(new Set(indices)).filter((index) => index >= 0 && index < count)
+	if (unique.length === 0) throw new Error(`Choose a candidate 1-${count}, or use /memory accept all.`)
+	return unique
+}
+
+function formatSavedHarvest(records: MemoryRecord[], remaining: number): string {
+	return [
+		`Saved ${records.length} harvested memor${records.length === 1 ? "y" : "ies"}`,
+		...records.map((record, index) => formatRecord(record, index + 1)),
+		remaining > 0 ? `Pending candidates remaining: ${remaining}` : "No pending harvest candidates remaining.",
+	].join("\n")
+}
+
 function postRunMemorySuggestion(): string {
 	return [
 		"Potential memory?",
 		"This run looks like it may contain a durable learning/decision/pitfall, but nothing was saved automatically.",
-		"Use one of these if it is worth keeping:",
-		"/memory add-solution <root cause + fix>",
-		"/memory add-decision <choice + why>",
-		"/memory add-pitfall <trap to avoid>",
-		"/memory add-pattern <reusable workflow>",
-		"/memory add-learning <general lesson>",
-		"Defaults: preferences are global; other types are project-scoped. Add --global or --project to override.",
+		"Run /memory harvest to review candidate memories, then /memory accept <number|all> to save selected candidates.",
+		"Defaults: preferences are global; other types are project-scoped. Add --global or --project to manual /memory add commands when needed.",
 	].join("\n")
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
 	let runMemoryState: { prompt: string; captured: boolean } | undefined
+	let lastRunSnapshot: LastRunSnapshot | undefined
+	let pendingHarvest: PendingHarvest | undefined
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const prompt = typeof event.prompt === "string" ? event.prompt : ""
@@ -662,9 +808,10 @@ export default function memoryExtension(pi: ExtensionAPI) {
 	pi.on("agent_end", async (event, ctx) => {
 		const state = runMemoryState
 		runMemoryState = undefined
-		if (!state || state.captured) return
+		if (!state) return
 		const assistantText = finalAssistantText(event.messages)
-		if (shouldSuggestPostRunCapture(state.prompt, assistantText, event.messages)) showText(ctx, postRunMemorySuggestion())
+		lastRunSnapshot = { prompt: state.prompt, assistantText, messages: event.messages, createdAt: new Date().toISOString() }
+		if (!state.captured && shouldSuggestPostRunCapture(state.prompt, assistantText, event.messages)) showText(ctx, postRunMemorySuggestion())
 	})
 
 	pi.registerTool({
@@ -719,12 +866,13 @@ export default function memoryExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("memory", {
-		description: "Manage explicit durable memory. Usage: /memory [status|add|search|recent|clear]",
+		description: "Manage explicit durable memory. Usage: /memory [status|add|harvest|accept|search|recent|clear]",
 		getArgumentCompletions: memoryArgumentCompletions,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			try {
 				const { command, rest } = parseCommandArgs(args)
 				if (command === "clear") {
+					pendingHarvest = undefined
 					ctx.ui.setWidget("memory", undefined)
 					notify(ctx, "Memory widget cleared.", "info")
 					return
@@ -742,6 +890,25 @@ export default function memoryExtension(pi: ExtensionAPI) {
 					const options = parseOptions(rest)
 					if (!options.text.trim()) throw new Error("Usage: /memory search <query> [--global|--project|--all] [--type <type>]")
 					showText(ctx, formatSearchResults(searchMemory(ctx.cwd, options.text, { scope: options.scope, type: options.type, limit: options.limit }), options.text))
+					return
+				}
+				if (command === "harvest") {
+					if (!lastRunSnapshot) throw new Error("No completed agent run is available to harvest yet.")
+					const candidates = harvestMemoryCandidates(lastRunSnapshot)
+					pendingHarvest = candidates.length > 0 ? { createdAt: new Date().toISOString(), candidates } : undefined
+					showText(ctx, formatHarvest(candidates))
+					return
+				}
+				if (command === "accept") {
+					if (!pendingHarvest || pendingHarvest.candidates.length === 0) throw new Error("No pending memory harvest. Run /memory harvest first.")
+					const indices = parseAcceptSelection(rest, pendingHarvest.candidates.length)
+					const selected = pendingHarvest.candidates.filter((_, index) => indices.includes(index))
+					const saved = selected.map((candidate) =>
+						writeMemory({ cwd: ctx.cwd, type: candidate.type, content: candidate.content, title: candidate.title, scope: candidate.scope }),
+					)
+					pendingHarvest.candidates = pendingHarvest.candidates.filter((_, index) => !indices.includes(index))
+					if (pendingHarvest.candidates.length === 0) pendingHarvest = undefined
+					showText(ctx, formatSavedHarvest(saved, pendingHarvest?.candidates.length || 0))
 					return
 				}
 				const aliasType = command.startsWith("add-") ? normalizeType(command.slice("add-".length)) : undefined
@@ -766,7 +933,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
 					showText(ctx, `Saved ${record.scope}/${record.type} memory\n${record.title}\n${record.path}`)
 					return
 				}
-				throw new Error("Usage: /memory [status|add|search|recent|clear]")
+				throw new Error("Usage: /memory [status|add|harvest|accept|search|recent|clear]")
 			} catch (error) {
 				notify(ctx, error instanceof Error ? error.message : String(error), "error")
 			}

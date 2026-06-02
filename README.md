@@ -50,6 +50,8 @@ The root package includes a tiny explicit memory layer backed by Markdown files 
 /memory status
 /memory add decision Use Markdown memory before adding SQLite or GBrain.
 /memory add-preference Prefer concise final answers unless detail is requested. --global
+/memory harvest
+/memory accept 1
 /memory search markdown memory
 /memory recent
 ```
@@ -58,7 +60,9 @@ Memory types: `decision`, `learning`, `preference`, `solution`, `pattern`, `pitf
 
 Scope defaults are intentionally simple: `preference` defaults to global memory; all other types default to project/workspace memory. Override with `--global` or `--project`.
 
-LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol, relevant local memory snippets for substantial debugging/planning/review/architecture prompts, and a low-noise post-run reminder when a run looks memory-worthy but nothing was captured. Memory capture remains explicit or confirmation-oriented; there is no always-on entity detector, cron, or embedding dependency.
+LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol, relevant local memory snippets for substantial debugging/planning/review/architecture prompts, and a low-noise post-run reminder when a run looks memory-worthy but nothing was captured.
+
+Use `/memory harvest` after a completed run to generate candidate memories without saving anything. Use `/memory accept <number|all>` to save selected candidates through the same validation and secret checks as manual capture. Memory capture remains explicit or confirmation-oriented; there is no always-on entity detector, cron, or embedding dependency.
 
 ## Companion packages
 
