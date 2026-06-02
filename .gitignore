@@ -1,0 +1,30 @@
+# OS/editor noise
+.DS_Store
+*.swp
+
+# JS package artifacts
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets / runtime-only config
+.env
+.env.*
+!.env.example
+allowlisted-web.json
+
+# Pi runtime/private state is intentionally outside this repo
+.pi/sessions/
+.pi/workspaces/
+.agent-handoff/
+packages/**/.pi/
+
+# Local private skills/assets that are intentionally not public
+config/agent/skills/last30days/

@@ -1,0 +1,341 @@
+#!/usr/bin/env sh
+set -eu
+
+APP_NAME="piw"
+WORKSPACES_BASE="${PI_WORKSPACES_DIR:-$HOME/.pi/agent/workspaces}"
+HANDOFF_BASE="${AGENT_HANDOFF_HOME:-$HOME/.agent-handoff}"
+
+usage() {
+  cat <<'EOF'
+piw: workspace-id wrapper for pi
+
+Usage:
+  piw [pi args...]
+  piw init [path]
+  piw id
+  piw dir
+  piw info
+  piw handoff-dir
+  piw handoff-info
+  piw handoff-init
+  piw --version
+  piw --help
+
+Commands:
+  init [path]   Initialize .pi/workspace-id in path (or current dir)
+  id            Print effective workspace id
+  dir           Print effective pi --session-dir path
+  info          Print effective workspace details
+  handoff-dir   Print and create the effective agent handoff dir
+  handoff-info  Print workspace + handoff details
+  handoff-init  Create the standard handoff artifact directories
+  --version     Forward to pi --version without creating a workspace/session dir
+
+Environment:
+  PI_WORKSPACES_DIR   Base directory for workspace session buckets
+                      Default: ~/.pi/agent/workspaces
+  AGENT_HANDOFF_HOME  Base directory for cross-harness handoff artifacts
+                      Default: ~/.agent-handoff
+EOF
+}
+
+err() {
+  printf '%s: %s\n' "$APP_NAME" "$*" >&2
+}
+
+canonical_dir() {
+  # shellcheck disable=SC2164
+  (
+    cd "$1"
+    pwd -P
+  )
+}
+
+generate_id() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY'
+import uuid
+print(uuid.uuid4())
+PY
+    return
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    # 16 random bytes -> 32 hex chars
+    openssl rand -hex 16
+    return
+  fi
+
+  # Last-resort fallback
+  printf '%s-%s\n' "$(date +%s)" "$$"
+}
+
+workspace_id_file() {
+  printf '%s/.pi/workspace-id\n' "$1"
+}
+
+read_workspace_id() {
+  root="$1"
+  file="$(workspace_id_file "$root")"
+  [ -f "$file" ] || return 1
+
+  id="$(tr -d '[:space:]' < "$file")"
+  [ -n "$id" ] || return 1
+  printf '%s\n' "$id"
+}
+
+ensure_workspace_id() {
+  root="$1"
+
+  if id="$(read_workspace_id "$root" 2>/dev/null)"; then
+    printf '%s\n' "$id"
+    return
+  fi
+
+  mkdir -p "$root/.pi"
+  id="$(generate_id | tr -d '[:space:]')"
+
+  if [ -z "$id" ]; then
+    err "failed to generate workspace id"
+    exit 1
+  fi
+
+  printf '%s\n' "$id" > "$(workspace_id_file "$root")"
+  printf '%s\n' "$id"
+}
+
+find_git_root() {
+  command -v git >/dev/null 2>&1 || return 1
+  git rev-parse --show-toplevel 2>/dev/null || return 1
+}
+
+find_workspace_ancestor() {
+  dir="$(pwd -P)"
+
+  while :; do
+    if [ -f "$dir/.pi/workspace-id" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+
+    [ "$dir" = "/" ] && break
+    dir="$(dirname "$dir")"
+  done
+
+  return 1
+}
+
+resolve_workspace_root() {
+  if root="$(find_git_root 2>/dev/null)"; then
+    canonical_dir "$root"
+    return
+  fi
+
+  if root="$(find_workspace_ancestor 2>/dev/null)"; then
+    canonical_dir "$root"
+    return
+  fi
+
+  pwd -P
+}
+
+session_dir_for_id() {
+  id="$1"
+  printf '%s/%s\n' "$WORKSPACES_BASE" "$id"
+}
+
+handoff_dir_for_id() {
+  id="$1"
+  printf '%s/workspaces/%s\n' "$HANDOFF_BASE" "$id"
+}
+
+ensure_handoff_dirs() {
+  handoff_dir="$1"
+  mkdir -p \
+    "$handoff_dir/tasks" \
+    "$handoff_dir/plans" \
+    "$handoff_dir/reviews" \
+    "$handoff_dir/decisions" \
+    "$handoff_dir/runs" \
+    "$handoff_dir/logs" \
+    "$handoff_dir/archive"
+}
+
+prepare_workspace() {
+  PIW_ROOT="$(resolve_workspace_root)"
+  PIW_ID="$(ensure_workspace_id "$PIW_ROOT")"
+  PIW_SESSION_DIR="$(session_dir_for_id "$PIW_ID")"
+
+  mkdir -p "$PIW_SESSION_DIR"
+}
+
+cmd_init() {
+  target="${1:-$(pwd -P)}"
+
+  if [ ! -d "$target" ]; then
+    err "not a directory: $target"
+    exit 1
+  fi
+
+  root="$(canonical_dir "$target")"
+  id="$(ensure_workspace_id "$root")"
+  session_dir="$(session_dir_for_id "$id")"
+  mkdir -p "$session_dir"
+
+  printf 'initialized workspace\n'
+  printf 'root: %s\n' "$root"
+  printf 'id_file: %s\n' "$(workspace_id_file "$root")"
+  printf 'workspace_id: %s\n' "$id"
+  printf 'session_dir: %s\n' "$session_dir"
+}
+
+cmd_id() {
+  prepare_workspace
+  printf '%s\n' "$PIW_ID"
+}
+
+cmd_dir() {
+  prepare_workspace
+  printf '%s\n' "$PIW_SESSION_DIR"
+}
+
+cmd_info() {
+  prepare_workspace
+
+  printf 'root: %s\n' "$PIW_ROOT"
+  printf 'id_file: %s\n' "$(workspace_id_file "$PIW_ROOT")"
+  printf 'workspace_id: %s\n' "$PIW_ID"
+  printf 'session_dir: %s\n' "$PIW_SESSION_DIR"
+}
+
+cmd_handoff_dir() {
+  prepare_workspace
+  PIW_HANDOFF_DIR="$(handoff_dir_for_id "$PIW_ID")"
+  mkdir -p "$PIW_HANDOFF_DIR"
+  printf '%s\n' "$PIW_HANDOFF_DIR"
+}
+
+cmd_handoff_info() {
+  prepare_workspace
+  PIW_HANDOFF_DIR="$(handoff_dir_for_id "$PIW_ID")"
+
+  printf 'root: %s\n' "$PIW_ROOT"
+  printf 'id_file: %s\n' "$(workspace_id_file "$PIW_ROOT")"
+  printf 'workspace_id: %s\n' "$PIW_ID"
+  printf 'handoff_home: %s\n' "$HANDOFF_BASE"
+  printf 'handoff_dir: %s\n' "$PIW_HANDOFF_DIR"
+}
+
+cmd_handoff_init() {
+  prepare_workspace
+  PIW_HANDOFF_DIR="$(handoff_dir_for_id "$PIW_ID")"
+  ensure_handoff_dirs "$PIW_HANDOFF_DIR"
+
+  if command -v python3 >/dev/null 2>&1; then
+    PIW_ROOT="$PIW_ROOT" PIW_ID="$PIW_ID" PIW_HANDOFF_DIR="$PIW_HANDOFF_DIR" python3 - <<'PY'
+import json, os, pathlib, datetime
+path = pathlib.Path(os.environ["PIW_HANDOFF_DIR"]) / "workspace.json"
+data = {
+    "workspace_id": os.environ["PIW_ID"],
+    "workspace_root": os.environ["PIW_ROOT"],
+    "handoff_dir": os.environ["PIW_HANDOFF_DIR"],
+    "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+}
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+  fi
+
+  printf 'initialized handoff workspace\n'
+  printf 'handoff_dir: %s\n' "$PIW_HANDOFF_DIR"
+}
+
+is_pi_package_command() {
+  case "${1:-}" in
+    install|remove|uninstall|update|list|config)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+apply_proxyshire_env() {
+  # When proxyshire is enabled, Pi/Node needs explicit env proxy settings;
+  # macOS system proxy alone is not enough for Node CLI traffic.
+  if [ -f "$HOME/.config/proxyshire/enabled" ]; then
+    export NODE_USE_ENV_PROXY=1
+    export HTTP_PROXY="http://127.0.0.1:2084"
+    export HTTPS_PROXY="http://127.0.0.1:2084"
+    export http_proxy="$HTTP_PROXY"
+    export https_proxy="$HTTPS_PROXY"
+    export ALL_PROXY="socks5h://127.0.0.1:2085"
+    export all_proxy="$ALL_PROXY"
+    export NO_PROXY="localhost,127.0.0.1,::1,azure.workstation,.workstation,.local,.lan,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.2*.*,172.3*.*,192.168.*,100.64.*,169.254.*"
+    export no_proxy="$NO_PROXY"
+  fi
+}
+
+run_pi() {
+  if ! command -v pi >/dev/null 2>&1; then
+    err "pi command not found in PATH"
+    exit 127
+  fi
+
+  apply_proxyshire_env
+
+  # Pi package/config commands must remain first-position CLI commands.
+  # Injecting --session-dir before them makes pi treat the command name as a
+  # normal prompt, e.g. `pi update` opens an agent session that answers
+  # "update" instead of updating pi.
+  if is_pi_package_command "${1:-}"; then
+    command pi "$@"
+    return
+  fi
+
+  prepare_workspace
+
+  command pi --session-dir "$PIW_SESSION_DIR" "$@"
+}
+
+case "${1:-}" in
+  "" )
+    run_pi
+    ;;
+  --help|-h|help)
+    usage
+    ;;
+  --version|-v|version)
+    command pi "$@"
+    ;;
+  init)
+    shift
+    cmd_init "${1:-}"
+    ;;
+  id)
+    cmd_id
+    ;;
+  dir)
+    cmd_dir
+    ;;
+  info)
+    cmd_info
+    ;;
+  handoff-dir)
+    cmd_handoff_dir
+    ;;
+  handoff-info)
+    cmd_handoff_info
+    ;;
+  handoff-init)
+    cmd_handoff_init
+    ;;
+  *)
+    run_pi "$@"
+    ;;
+esac

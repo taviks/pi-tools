@@ -1,0 +1,17 @@
+{
+  "name": "pi-allowlisted-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Project-local Pi extension for read-only, allowlist-gated web fetches.",
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "linkedom": "^0.18.12",
+    "turndown": "^7.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
