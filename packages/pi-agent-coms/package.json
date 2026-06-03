@@ -1,0 +1,25 @@
+{
+  "name": "pi-agent-coms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Pi extension for local room-based peer messaging between agents.",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "agents",
+    "coms"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}
