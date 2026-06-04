@@ -1,5 +1,5 @@
 ---
-name: repo-cleanup
+name: audit-repo-cleanup
 description: Audit a repository for cleanup and hygiene opportunities, such as missing .editorconfig, weak TypeScript/config setup, package-manager drift, stale generated files, CI/docs gaps, and other low-to-medium-risk maintenance items. Use when asked for repo cleanup, codebase hygiene, project setup review, or a cleanup plan before implementation.
 license: MIT
 compatibility: Optimized for Pi coding-agent workflows; usable in any repo with read/bash access.
