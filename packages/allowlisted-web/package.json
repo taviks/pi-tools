@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Project-local Pi extension for read-only, allowlist-gated web fetches.",
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
     "linkedom": "^0.18.12",

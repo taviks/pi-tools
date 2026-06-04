@@ -36,6 +36,18 @@ For a project-local allowlisted web fetch tool, add this to that project's `.pi/
 
 Run `/reload` in Pi after changing package paths.
 
+## Development
+
+Use the root pnpm workspace for local checks:
+
+```bash
+pnpm install
+pnpm -s check:layout
+pnpm -s typecheck
+```
+
+`check:layout` verifies the expected package/config directories and JSON templates. `typecheck` runs TypeScript across the root extensions and companion packages.
+
 ## What's in the root package
 
 The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.

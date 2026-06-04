@@ -7,6 +7,7 @@ required=(
   packages/pi-workspace-id
   packages/pi-llm-usage
   packages/pi-agent-handoff
+  packages/pi-agent-coms
   packages/allowlisted-web
   config/agent/AGENTS.md
   config/agent/agents

@@ -1,28 +1,22 @@
 # pi-llm-usage
 
-A small [pi](https://github.com/badlogic/pi-mono) extension that adds a `/usage` command to show LLM subscription usage in an overlay.
+A small [Pi](https://github.com/earendil-works/pi) extension that adds a `/usage` command to show LLM subscription usage in an overlay.
 
 ![pi-llm-usage overlay](./screenshot.png)
 
 ## Install
 
-### Recommended (global convention)
-
-```bash
-pi install git:github.com/your-org/pi-tools/tree/main/packages/pi-llm-usage
-```
-
-This installs the package in pi's global location and updates global settings (`~/.pi/agent/settings.json`).
-
-### Manual settings entry (global)
+Add this package to `~/.pi/agent/settings.json` or a project `.pi/settings.json`:
 
 ```json
 {
-  "packages": ["git:github.com/your-org/pi-tools/tree/main/packages/pi-llm-usage"]
+  "packages": [
+    "~/path/to/pi-tools/packages/pi-llm-usage"
+  ]
 }
 ```
 
-Then run `/reload` in pi.
+Then run `/reload` in Pi.
 
 ## Usage
 
