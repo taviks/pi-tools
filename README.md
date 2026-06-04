@@ -50,8 +50,11 @@ The root package includes a tiny explicit memory layer backed by Markdown files 
 /memory status
 /memory add decision Use Markdown memory before adding SQLite or GBrain.
 /memory add-preference Prefer concise final answers unless detail is requested. --global
+/memory pending
 /memory harvest
+/memory show 1
 /memory accept 1
+/memory reject 2
 /memory search markdown memory
 /memory recent
 ```
@@ -60,15 +63,16 @@ Memory types: `decision`, `learning`, `preference`, `solution`, `pattern`, `pitf
 
 Scope defaults are intentionally simple: `preference` defaults to global memory; all other types default to project/workspace memory. Override with `--global` or `--project`.
 
-LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol, relevant local memory snippets for substantial debugging/planning/review/architecture prompts, and a low-noise post-run reminder when a run looks memory-worthy but nothing was captured.
+LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol and relevant local memory snippets for substantial debugging/planning/review/architecture prompts. Inferred memories are queued silently by default; post-run reminder widgets are opt-in with `/memory reminder on` or `PI_MEMORY_REMINDER=1`.
 
-Use `/memory harvest` after a completed run to generate candidate memories without saving anything. Use `/memory accept <number|all>` to save selected candidates through the same validation and secret checks as manual capture. Memory capture remains explicit or confirmation-oriented; there is no always-on entity detector, cron, or embedding dependency.
+Use `/memory pending` to review passively queued candidates, or `/memory harvest` after a completed run to scan the last run on demand. Use `/memory show <number|all>` for details, `/memory accept <number|all>` to save selected candidates through the same validation and secret checks as manual capture, and `/memory reject <number|all>` to discard low-value candidates. Memory capture remains explicit; there is no always-on entity detector, cron, or embedding dependency.
 
 ## Companion packages
 
 - `packages/pi-workspace-id/` — `piw` wrapper for stable workspace session dirs and handoff dirs.
 - `packages/pi-llm-usage/` — `/usage` overlay for subscription/API usage checks.
 - `packages/pi-agent-handoff/` — `/handoff` commands and LLM-callable handoff artifact tooling.
+- `packages/pi-agent-coms/` — standalone local room-based peer messaging between Pi agents.
 - `packages/allowlisted-web/` — project-local read-only allowlisted web fetch extension.
 
 ## Config templates
