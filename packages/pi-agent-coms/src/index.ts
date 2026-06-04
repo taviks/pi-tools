@@ -179,6 +179,7 @@ interface RegistryEntry {
 	started_at: string
 	heartbeat_at: string
 	presence_updated_at?: string
+	is_working?: boolean | null
 	version: number
 }
 
@@ -361,8 +362,15 @@ function presenceSuffix(agent: { purpose?: string; scope?: string; status?: stri
 	return summary ? ` — ${summary}` : ""
 }
 
-function shortPresence(agent: { purpose?: string; scope?: string; status?: string; mode?: string }): string {
-	return agent.status || agent.purpose || agent.scope || agent.mode || ""
+function rolePersonaLabel(agent: { purpose?: string; mode?: string }): string {
+	const purpose = agent.purpose?.trim()
+	const mode = agent.mode?.trim()
+	if (purpose && mode && purpose.toLowerCase() !== mode.toLowerCase()) return `${purpose}/${mode}`
+	return purpose || mode || ""
+}
+
+function shortPresence(agent: { scope?: string; status?: string; reasoning?: string }): string {
+	return agent.status || agent.scope || agent.reasoning || ""
 }
 
 function roleLensList(): string {
@@ -588,6 +596,7 @@ function readRegistryEntries(room: string): RegistryEntry[] {
 					cwd: safeDisplayText(parsed.cwd || "", 500),
 					color: isValidHexColor(parsed.color) ? parsed.color : colorFor(parsed.session_id),
 					presence_updated_at: optionalDisplayText(parsed.presence_updated_at, 40),
+					is_working: parsed.is_working === true,
 				})
 			}
 		} catch {
@@ -1056,8 +1065,8 @@ function renderDashboardPlain(data: DashboardData): string[] {
 		`agents: ${data.peers.length + 1} (${alive + 1} alive${stale ? `, ${stale} stale` : ""}) · unread: ${data.unread} · inbound queue: ${data.inbound_queue} · pending: ${data.pending.length}`,
 		"",
 		"Agents:",
-		`● ${data.self.name} (self) ${data.self.model}${data.self.context_used_pct == null ? "" : ` ${data.self.context_used_pct}%`}${presenceSuffix(data.self)}`,
-		...data.peers.map((peer) => `${peer.alive ? "●" : "○"} ${peer.name} ${peer.model}${peer.context_used_pct == null ? "" : ` ${peer.context_used_pct}%`}${presenceSuffix(peer)}`),
+		`● ${data.self.name} (self) role:${rolePersonaLabel(data.self) || "(none)"} ${data.self.model}${data.self.context_used_pct == null ? "" : ` ${data.self.context_used_pct}%`}${presenceSuffix(data.self)}`,
+		...data.peers.map((peer) => `${peer.is_working ? "◐" : peer.alive ? "●" : "○"} ${peer.name} role:${rolePersonaLabel(peer) || "(none)"} ${peer.model}${peer.context_used_pct == null ? "" : ` ${peer.context_used_pct}%`}${presenceSuffix(peer)}`),
 		"",
 		"Pending:",
 		...(data.pending.length ? data.pending.map((item) => `→ ${item.target} ${formatAge(item.created_at)} ${item.msg_id} ${item.preview}`) : ["none"]),
@@ -1119,6 +1128,7 @@ function renderDashboard(width: number, theme: Theme, data: DashboardData, state
 		context: number | null
 		queue: number | null
 		unread: number | null
+		is_working: boolean | null
 	}> = [
 		{
 			name: data.self.name,
@@ -1134,6 +1144,7 @@ function renderDashboard(width: number, theme: Theme, data: DashboardData, state
 			context: data.self.context_used_pct,
 			queue: data.self.queue_depth,
 			unread: data.self.inbox_unread,
+			is_working: data.self.is_working,
 		},
 		...data.peers.map((peer) => ({
 			name: peer.name,
@@ -1148,17 +1159,19 @@ function renderDashboard(width: number, theme: Theme, data: DashboardData, state
 			context: peer.context_used_pct,
 			queue: peer.queue_depth,
 			unread: peer.inbox_unread,
+			is_working: peer.is_working,
 		})),
 	]
 	for (const agent of agentRows) {
-		const dot = agent.alive ? theme.fg("success", "●") : theme.fg("dim", "○")
+		const dot = agent.is_working ? theme.fg("warning", "◐") : agent.alive ? theme.fg("success", "●") : theme.fg("dim", "○")
 		const name = fitAnsi(hexFg(agent.color, agent.name), 14, "")
 		const self = agent.self ? theme.fg("dim", " self") : ""
+		const role = fitAnsi(theme.fg(rolePersonaLabel(agent) ? "accent" : "dim", rolePersonaLabel(agent) || "—"), 18, "")
 		const model = fitAnsi(theme.fg("dim", modelLabel(agent.model)), 12, "")
 		const queue = agent.queue == null ? theme.fg("dim", "q:-") : agent.queue > 0 ? theme.fg("warning", `q:${agent.queue}`) : theme.fg("dim", "q:0")
 		const unread = agent.unread == null ? theme.fg("dim", "in:-") : agent.unread > 0 ? theme.fg("warning", `in:${agent.unread}`) : theme.fg("dim", "in:0")
 		const presence = presenceSuffix(agent)
-		lines.push(row(`${dot} ${name}${self} ${model} ${contextPct(theme, agent.context)} ${queue} ${unread}${presence ? theme.fg("muted", presence) : ""}`))
+		lines.push(row(`${dot} ${name}${self} ${role} ${model} ${contextPct(theme, agent.context)} ${queue} ${unread}${presence ? theme.fg("muted", presence) : ""}`))
 	}
 
 	lines.push(row())
@@ -1414,6 +1427,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	let pingTimer: NodeJS.Timeout | null = null
 	let widgetAnimationTimer: NodeJS.Timeout | null = null
 	let widgetSpinnerTick = 0
+	let localAgentWorking = false
 	let shuttingDown = false
 
 	const inbox: StoredMessage[] = []
@@ -1561,12 +1575,8 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		return `${record.kind} from ${record.from.name}${replyTo}\n${body}`
 	}
 
-	function isAgentWorking(ctx: ExtensionContext | null): boolean {
-		try {
-			return Boolean(ctx && !ctx.isIdle())
-		} catch {
-			return false
-		}
+	function isAgentWorking(_ctx: ExtensionContext | null): boolean {
+		return localAgentWorking
 	}
 
 	function agentCard(): AgentCard {
@@ -1653,7 +1663,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		}
 
 		const border = safeWidth >= 2 ? theme.fg("dim", "━".repeat(safeWidth)) : ""
-		const title = `${theme.fg("accent", "coms")} ${hexFg(identity.color, identity.name)}${theme.fg("dim", `@${identity.room}`)} ${theme.fg("muted", `${peers.length} peer${peers.length === 1 ? "" : "s"}`)}${unread ? theme.fg("warning", ` · ${unread} unread`) : ""}${pending ? theme.fg("warning", ` · ${pending} pending`) : ""}`
+		const selfRole = rolePersonaLabel(identity)
+		const selfRoleText = selfRole ? ` ${theme.fg("accent", `[${selfRole}]`)}` : ""
+		const title = `${theme.fg("accent", "coms")} ${hexFg(identity.color, identity.name)}${theme.fg("dim", `@${identity.room}`)}${selfRoleText} ${theme.fg("muted", `${peers.length} peer${peers.length === 1 ? "" : "s"}`)}${unread ? theme.fg("warning", ` · ${unread} unread`) : ""}${pending ? theme.fg("warning", ` · ${pending} pending`) : ""}`
 
 		const contextBar = (pct: number | null, color: string): string => {
 			if (pct == null) return theme.fg("dim", `[${"·".repeat(12)}] --%`)
@@ -1671,12 +1683,14 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			const dot = peer.is_working ? activeSpinner(theme) : peer.alive ? " " : theme.fg("dim", "○")
 			const queue = peer.queue_depth && peer.queue_depth > 0 ? theme.fg("warning", ` q:${peer.queue_depth}`) : ""
 			const unreadPeer = peer.inbox_unread && peer.inbox_unread > 0 ? theme.fg("warning", ` inbox:${peer.inbox_unread}`) : ""
+			const role = rolePersonaLabel(peer)
+			const roleText = role ? ` ${fitAnsi(theme.fg("accent", `[${role}]`), 20, "")}` : ""
 			const presence = shortPresence(peer)
 			const presenceText = presence ? theme.fg("muted", ` — ${presence}`) : ""
 			const model = theme.fg("dim", peer.model.slice(0, 16).padEnd(16))
 			lines.push(
 				truncateToWidth(
-					` ${dot} ${hexFg(peer.color, peer.name.padEnd(12))} ${model} ${contextBar(peer.context_used_pct, peer.color)}${queue}${unreadPeer}${presenceText}`,
+					` ${dot} ${hexFg(peer.color, peer.name.padEnd(12))}${roleText} ${model} ${contextBar(peer.context_used_pct, peer.color)}${queue}${unreadPeer}${presenceText}`,
 					safeWidth,
 					"…",
 					true,
@@ -1753,7 +1767,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				context_used_pct: card?.context_used_pct ?? null,
 				inbox_unread: card?.inbox_unread ?? null,
 				queue_depth: card?.queue_depth ?? null,
-				is_working: card?.is_working ?? null,
+				is_working: card?.is_working ?? entry.is_working ?? null,
 				last_seen_at: card ? nowIso() : null,
 			}
 			peerCache.set(entry.session_id, snapshot)
@@ -2210,6 +2224,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			started_at: identity.started_at,
 			heartbeat_at: nowIso(),
 			presence_updated_at: identity.presence_updated_at,
+			is_working: isAgentWorking(currentCtx),
 			version: VERSION,
 		}
 		try {
@@ -2299,6 +2314,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		if (heartbeatTimer) clearInterval(heartbeatTimer)
 		if (pingTimer) clearInterval(pingTimer)
 		stopWidgetAnimation()
+		localAgentWorking = false
 		heartbeatTimer = null
 		pingTimer = null
 		if (server) {
@@ -2352,6 +2368,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		currentCtx = ctx
+		localAgentWorking = false
 		shuttingDown = false
 		widgetMode = normalizeWidgetMode(pi.getFlag("coms-widget") || process.env.PI_AGENT_COMS_WIDGET, widgetMode)
 		restoreInbox(ctx)
@@ -2400,14 +2417,20 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	pi.on("agent_start", async (_event, ctx) => {
 		currentCtx = ctx
+		localAgentWorking = true
 		writeHeartbeat()
 		if (ctx.hasUI) installWidget(ctx)
 	})
 
 	pi.on("agent_end", async (event, ctx) => {
 		currentCtx = ctx
-		await autoReplyFromAgentEnd(event, ctx)
-		if (ctx.hasUI) installWidget(ctx)
+		try {
+			await autoReplyFromAgentEnd(event, ctx)
+		} finally {
+			localAgentWorking = false
+			writeHeartbeat()
+			if (ctx.hasUI) installWidget(ctx)
+		}
 	})
 
 	pi.on("session_shutdown", async () => {
