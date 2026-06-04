@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete";
 
 type ClipboardCandidate = {
 	command: string;
@@ -233,7 +234,17 @@ async function copyOrFillEditor(text: string, ctx: any, successMessage: string) 
 	ctx.ui.notify("Clipboard command unavailable; put content in editor instead.", "warning");
 }
 
+const copyBlockCompletions = (prefix: string) => {
+	const values = ["1", "2", "3", "all"];
+	const filtered = values.filter((value) => value.startsWith(prefix.trim().toLowerCase()));
+	return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
+};
+
 export default function (pi: ExtensionAPI) {
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "copy-block", copyBlockCompletions);
+	});
+
 	pi.registerCommand("copy-last", {
 		description: "Copy the last assistant response as Markdown",
 		handler: async (_args, ctx) => {
@@ -249,11 +260,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("copy-block", {
 		description: "Copy a fenced code block from the last assistant response",
-		getArgumentCompletions: (prefix) => {
-			const values = ["1", "2", "3", "all"];
-			const filtered = values.filter((value) => value.startsWith(prefix.trim().toLowerCase()));
-			return filtered.length > 0 ? filtered.map((value) => ({ value, label: value })) : null;
-		},
+		getArgumentCompletions: copyBlockCompletions,
 		handler: async (args, ctx) => {
 			const markdown = extractLastAssistantMarkdown(ctx);
 			if (!markdown) {

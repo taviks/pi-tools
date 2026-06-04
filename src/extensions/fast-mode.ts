@@ -6,6 +6,7 @@ import {
 	setFastModeState,
 	type FastServiceTier,
 } from "../lib/fast-mode-state";
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete";
 
 const FAST_SERVICE_TIER: FastServiceTier = "priority";
 const STATE_ENTRY_TYPE = "fast-mode-state";
@@ -180,6 +181,7 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		restoreStateFromSession(ctx);
+		installSlashCommandArgumentAutocomplete(ctx, "fast", commandItems);
 	});
 
 	pi.on("model_select", (_event, _ctx) => {

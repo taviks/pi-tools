@@ -1,6 +1,7 @@
 import * as os from "node:os"
 import * as path from "node:path"
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const WIDGET_KEY = "verify-command"
 const DEFAULT_TIMEOUT_SECONDS = 20 * 60
@@ -124,6 +125,15 @@ function renderVerifyLines(
 	return lines
 }
 
+function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+	const normalized = prefix.trim().toLowerCase()
+	const options = ["clear", "--timeout 1200", "--tail 120", "--timeout 1200 --tail 120", "--"]
+	const items = options
+		.filter((choice) => choice.startsWith(normalized))
+		.map((choice) => ({ value: choice, label: choice }))
+	return items.length > 0 ? items : null
+}
+
 async function runVerification(pi: ExtensionAPI, ctx: ExtensionCommandContext, options: VerifyOptions) {
 	const logPath = tempLogPath()
 	const shell = getShell()
@@ -157,9 +167,14 @@ async function runVerification(pi: ExtensionAPI, ctx: ExtensionCommandContext, o
 }
 
 export default function verifyCommandExtension(pi: ExtensionAPI) {
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "verify", commandItems)
+	})
+
 	pi.registerCommand("verify", {
 		description:
 			"Run a verification command quietly after Pi is idle. Usage: /verify [--timeout seconds] [--tail lines] <command>",
+		getArgumentCompletions: commandItems,
 		handler: async (args, ctx) => {
 			if (args.trim().toLowerCase() === "clear") {
 				ctx.ui.setWidget(WIDGET_KEY, undefined)

@@ -8,6 +8,7 @@ import {
 	getTaskPreview,
 	subscribeTaskPreview,
 } from "../../lib/task-preview-state.js"
+import { installSlashCommandArgumentAutocomplete } from "../../lib/slash-command-autocomplete.js"
 import {
 	applyProgressMarkers,
 	cloneSteps,
@@ -27,6 +28,16 @@ const STALE_CONTEXT_TYPES = new Set(["session-plan:planning", "session-plan:revi
 const PLANNING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
 const PLANNING_SPINNER_INTERVAL_MS = 80
 const SESSION_PLAN_DISABLED = process.env.PI_SESSION_PLAN_DISABLE === "1"
+const AUTOPLAN_COMMAND_CHOICES = ["on", "off", "status", "clear", "enable", "disable"] as const
+
+function autoplanCommandItems(prefix: string): Array<{ value: string; label: string }> | null {
+	const normalized = prefix.trim().toLowerCase()
+	const items = AUTOPLAN_COMMAND_CHOICES.filter((choice) => choice.startsWith(normalized)).map((choice) => ({
+		value: choice,
+		label: choice,
+	}))
+	return items.length > 0 ? items : null
+}
 
 interface PersistedState {
 	autoPlanEnabled?: boolean
@@ -366,6 +377,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("autoplan", {
 		description: "Manage auto-plan mode. Usage: /autoplan [on|off|status|clear]",
+		getArgumentCompletions: autoplanCommandItems,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const value = args.trim()
 			const command = value.split(/\s+/)[0]?.toLowerCase()
@@ -426,6 +438,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	})
 
 	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "autoplan", autoplanCommandItems)
 		latestContext = ctx
 		restoreStateFromSession(ctx)
 		updateUI(ctx)

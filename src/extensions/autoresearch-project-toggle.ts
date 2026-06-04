@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete";
 
 const AUTORESEARCH_PACKAGE_SOURCE = "npm:pi-autoresearch";
 
@@ -102,6 +103,12 @@ async function reloadAfterChange(ctx: ExtensionCommandContext, message: string) 
 }
 
 export default function autoresearchProjectToggle(pi: ExtensionAPI) {
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-enable", () => null);
+		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-disable", () => null);
+		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-status", () => null);
+	});
+
 	pi.registerCommand("autoresearch-enable", {
 		description: "Enable the official pi-autoresearch package for this project and reload",
 		handler: async (args, ctx) => {

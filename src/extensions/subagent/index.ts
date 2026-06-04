@@ -24,6 +24,7 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 import { FAST_MODE_ENV_KEY, FAST_SERVICE_TIER_ENV_KEY, getFastModeState } from "../../lib/fast-mode-state.js";
+import { installSlashCommandArgumentAutocomplete } from "../../lib/slash-command-autocomplete.js";
 import { TASK_PREVIEW_SHORTCUT_LABEL, ensureTaskPreviewShortcut, getTaskPreview } from "../../lib/task-preview-state.js";
 
 const MAX_PARALLEL_TASKS = 16;
@@ -2020,6 +2021,27 @@ export default function (pi: ExtensionAPI) {
 		refreshBackgroundUI();
 	};
 
+	const subjobsCommandItems = (prefix: string): Array<{ value: string; label: string }> | null => {
+		const options = [
+			"clear",
+			"view compact",
+			"view detailed",
+			"group job",
+			"group agent",
+			"agents all",
+			"agents default",
+			"agents 4",
+			"config",
+			"ui",
+			...getBackgroundJobs().map((job) => job.id),
+		]
+		const normalized = prefix.trim().toLowerCase();
+		const items = options
+			.filter((choice) => choice.toLowerCase().startsWith(normalized))
+			.map((choice) => ({ value: choice, label: choice }));
+		return items.length > 0 ? items : null;
+	};
+
 	const stopWidgetTicker = () => {
 		if (!widgetTicker) return;
 		clearInterval(widgetTicker);
@@ -2329,6 +2351,7 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "subjobs", subjobsCommandItems);
 		updateLatestContext(ctx);
 	});
 
@@ -3314,6 +3337,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("subjobs", {
 		description:
 			"Show/clear jobs and control widget mode. Usage: /subjobs [clear|<jobId>|view [compact|detailed]|group [job|agent]|agents [all|default|<count>]|config]",
+		getArgumentCompletions: subjobsCommandItems,
 		handler: async (args, ctx) => {
 			const value = args.trim();
 			const parts = value.split(/\s+/).filter(Boolean);

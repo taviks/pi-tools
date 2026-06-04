@@ -15,6 +15,7 @@ import {
 	writeNotifyDefaults,
 	type NotifyConfig,
 } from "../lib/notify-state"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const COMMAND_CHOICES = [
 	"status",
@@ -674,6 +675,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "notify", commandItems)
 		defaults = readNotifyDefaults()
 		current = initializeNotifyCurrentState(defaults)
 		if (hasAnyNotifyChannel(current)) lastEnabledConfig = current

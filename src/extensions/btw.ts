@@ -1,6 +1,7 @@
 import { buildSessionContext, convertToLlm, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { streamSimple, type AssistantMessage, type ModelThinkingLevel, type SimpleStreamOptions, type TextContent, type ThinkingLevel } from "@earendil-works/pi-ai"
 import { Text } from "@earendil-works/pi-tui"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const STATUS_KEY = "btw"
 const WIDGET_KEY = "btw"
@@ -182,6 +183,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
 	}
 
 	pi.events.on("btw:clear", () => clearBtw())
+
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "btw", commandItems)
+	})
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		clearBtw(ctx)

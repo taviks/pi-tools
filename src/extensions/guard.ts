@@ -2,6 +2,7 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 interface GuardState {
 	freezeDir?: string
@@ -280,6 +281,7 @@ function renderStatus(ctx: ExtensionCommandContext | ExtensionContext): void {
 
 export default function guardExtension(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "guard", () => null)
 		renderStatus(ctx)
 	})
 

@@ -5,6 +5,7 @@ import * as path from "node:path"
 import { spawnSync } from "node:child_process"
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const MEMORY_TYPES = ["decision", "learning", "preference", "solution", "pattern", "pitfall"] as const
 const MEMORY_ADD_COMMANDS = MEMORY_TYPES.map((type) => `add-${type}`)
@@ -798,6 +799,10 @@ export default function memoryExtension(pi: ExtensionAPI) {
 	let runMemoryState: { prompt: string; captured: boolean } | undefined
 	let lastRunSnapshot: LastRunSnapshot | undefined
 	let pendingHarvest: PendingHarvest | undefined
+
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "memory", memoryArgumentCompletions)
+	})
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const prompt = typeof event.prompt === "string" ? event.prompt : ""

@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const WIDGET_KEY = "cost-audit"
 const MAX_ITEMS = 6
@@ -200,9 +201,22 @@ function buildAuditLines(ctx: ExtensionCommandContext): string[] {
 	return lines
 }
 
+function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+	const normalized = prefix.trim().toLowerCase()
+	const items = ["clear"]
+		.filter((choice) => choice.startsWith(normalized))
+		.map((choice) => ({ value: choice, label: choice }))
+	return items.length > 0 ? items : null
+}
+
 export default function costAuditExtension(pi: ExtensionAPI) {
+	pi.on("session_start", (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "cost-audit", commandItems)
+	})
+
 	pi.registerCommand("cost-audit", {
 		description: "Show active-branch model/tool usage, repeated reads, and noisy outputs",
+		getArgumentCompletions: commandItems,
 		handler: async (args, ctx) => {
 			if (args.trim().toLowerCase() === "clear") {
 				ctx.ui.setWidget(WIDGET_KEY, undefined)

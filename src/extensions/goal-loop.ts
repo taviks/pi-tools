@@ -3,6 +3,7 @@ import { StringEnum, type AssistantMessage, type TextContent } from "@earendil-w
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
+import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const STATUS_KEY = "goal-loop"
 const WIDGET_KEY = "goal-loop"
@@ -1080,6 +1081,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 	})
 
 	pi.on("session_start", (event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "goal", commandItems)
 		restoreStateFromSession(ctx)
 		activeTurnStartedAt = undefined
 		activeIterationStartedAt = undefined
