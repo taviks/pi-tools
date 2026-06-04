@@ -7,7 +7,7 @@ Think: several senior engineers in the same room. This package intentionally avo
 ## Features
 
 1. **Standalone package** — one Pi extension entrypoint; not wired into the root `pi-tools` package by default.
-2. **Room identity** — each Pi session gets a local identity (`name`, `room`, `purpose`, `color`) from CLI flags or sensible workspace defaults. Auto-names are short pronounceable nouns; collisions advance to the next available noun before falling back to suffixes.
+2. **Room identity** — each Pi session gets a local identity (`name`, `room`, `purpose`, `color`) from CLI flags or sensible workspace defaults. Auto-agent names are short pronounceable nouns; the room is the part after `@` (for example, `falcon@pi-tools-052095dd`). Collisions advance to the next available noun before falling back to suffixes.
 3. **Local transport** — each session binds a local Unix socket / Windows named pipe and writes a heartbeat registry entry under `~/.pi/agent-coms`.
 4. **Messaging primitives** — tools for list, send, broadcast, reply, inbox, get, and await.
 5. **Structured asks** — `coms_send` and `coms_broadcast` accept `responseSchema`; the target is asked for JSON-only output and auto-reply parses it into `details.response`. The schema is passed as an instruction, not fully validated locally.
@@ -40,7 +40,7 @@ pi --coms-name legacy --coms-room jm-migration --coms-purpose "AngularJS source-
 
 Widget mode can be set with `--coms-widget auto|compact|full|off` or `PI_AGENT_COMS_WIDGET`. The default `auto` mode keeps the full roster for small rooms and switches to a one-line compact widget in larger rooms.
 
-If `--coms-room` is omitted, the extension uses `.pi/workspace-id` when present, otherwise a stable slug derived from the workspace directory.
+If `--coms-room` is omitted, the extension derives a friendly workspace room. Human-readable `.pi/workspace-id` values are used as-is; opaque UUID/hex workspace IDs become `<workspace-slug>-<short-id>` (for example, `pi-tools-052095dd`). Without `.pi/workspace-id`, it falls back to a stable slug derived from the workspace directory.
 
 Markdown system-prompt frontmatter can also seed identity:
 

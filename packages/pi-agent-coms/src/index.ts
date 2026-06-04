@@ -357,12 +357,30 @@ function readWorkspaceId(root: string): string | undefined {
   }
 }
 
+function looksOpaqueWorkspaceId(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalized) ||
+    /^[0-9a-f]{24,64}$/.test(normalized) ||
+    /^\d{10,}-\d+$/.test(normalized)
+  );
+}
+
+function compactWorkspaceId(value: string): string {
+  const compact = safeSegment(value, "").replace(/[^a-z0-9]/g, "");
+  return (compact || shortHash(value)).slice(0, 8);
+}
+
 function defaultRoom(cwd: string): string {
   const root = workspaceRoot(cwd);
   const workspaceId = readWorkspaceId(root);
-  if (workspaceId) return safeSegment(workspaceId, "workspace");
   const base = safeSegment(path.basename(root), "workspace");
-  return `${base}-${shortHash(root)}`;
+  if (!workspaceId) return `${base}-${shortHash(root)}`;
+
+  const workspaceRoom = safeSegment(workspaceId, "workspace");
+  if (!looksOpaqueWorkspaceId(workspaceId)) return workspaceRoom;
+
+  return `${base}-${compactWorkspaceId(workspaceId)}`;
 }
 
 type PromptFrontmatter = { name?: string; purpose?: string; description?: string; color?: string };
@@ -1217,7 +1235,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
     default: undefined,
   });
   pi.registerFlag("coms-room", {
-    description: "agent-coms room name. Defaults to .pi/workspace-id or workspace slug.",
+    description: "agent-coms room name. Defaults to a friendly workspace room (workspace slug plus short id for opaque workspace IDs).",
     type: "string",
     default: undefined,
   });
