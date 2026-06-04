@@ -279,12 +279,14 @@ Use this structure:
 ### Not recommended / deferred
 - Items considered but not recommended, with a brief reason.
 
-### Confirmation needed
-Reply with one of:
-- `approve all` — implement the full plan
-- `approve A1 A3` — implement selected items only
-- `edit plan: ...` — adjust scope/order/details
-- `reject` — do not make changes
+### Next steps / confirmation needed
+Use numbered replies so approval is fast and unambiguous:
+1. `1` — implement the full plan
+2. `2 A1 A3` — implement selected item IDs only
+3. `3 ...` — revise scope/order/details before implementation
+4. `4` — do not make changes
+
+A bare `2` is not enough; ask which item IDs to implement before editing.
 ```
 
 If there are no substantive findings, say so clearly, list what you checked, and offer only optional improvements.
