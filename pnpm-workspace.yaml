@@ -1,2 +1,5 @@
 packages:
   - "packages/*"
+
+overrides:
+  "@mariozechner/clipboard": "0.3.6"

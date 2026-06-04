@@ -1528,7 +1528,7 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 }
 
 function getSubagentProcessEnv(): NodeJS.ProcessEnv {
-	const env = { ...process.env, PI_SESSION_PLAN_DISABLE: "1", PI_SKIP_VERSION_CHECK: "1" };
+	const env: NodeJS.ProcessEnv = { ...process.env, PI_SESSION_PLAN_DISABLE: "1", PI_SKIP_VERSION_CHECK: "1" };
 	const fastMode = getFastModeState();
 	if (fastMode.active) {
 		env[FAST_MODE_ENV_KEY] = "1";

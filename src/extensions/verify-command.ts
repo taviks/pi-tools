@@ -162,7 +162,7 @@ async function runVerification(pi: ExtensionAPI, ctx: ExtensionCommandContext, o
 	ctx.ui.setWidget(WIDGET_KEY, lines)
 	ctx.ui.notify(
 		`Verification ${result.killed ? "timed out" : result.code === 0 ? "passed" : "failed"}`,
-		result.code === 0 && !result.killed ? "success" : "error",
+		result.code === 0 && !result.killed ? "info" : "error",
 	)
 }
 

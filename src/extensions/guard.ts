@@ -336,7 +336,7 @@ export default function guardExtension(pi: ExtensionAPI) {
 			state.freezeDir = freezeDir
 			saveState(state)
 			renderStatus(ctx)
-			ctx.ui.notify(`Guard freeze enabled: ${freezeDir}`, "success")
+			ctx.ui.notify(`Guard freeze enabled: ${freezeDir}`, "info")
 		},
 	})
 

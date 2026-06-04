@@ -1,6 +1,7 @@
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { ChildProcessByStdio } from 'node:child_process'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import type { Readable } from 'node:stream'
 import type { BashOperations, ExtensionAPI } from '@earendil-works/pi-coding-agent'
 import { createBashToolDefinition } from '@earendil-works/pi-coding-agent'
 
@@ -63,7 +64,7 @@ function killTrackedProcesses() {
   trackedPids.clear()
 }
 
-function waitForChildProcess(child: ChildProcessWithoutNullStreams): Promise<number | null> {
+function waitForChildProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<number | null> {
   return new Promise((resolve, reject) => {
     let settled = false
     let exited = false

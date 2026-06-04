@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -914,9 +914,9 @@ function summarizeRules(config: LoadedConfig): string {
   }).join("\n");
 }
 
-function errorResult(message: string, details: Record<string, unknown> = {}) {
+function errorResult(message: string, details: Record<string, unknown> = {}): AgentToolResult<Record<string, unknown>> {
   return {
-    content: [{ type: "text", text: `Error: ${message}` }],
+    content: [{ type: "text" as const, text: `Error: ${message}` }],
     details: { error: message, ...details },
   };
 }

@@ -38,7 +38,7 @@ function isCanonicalAutoresearchSource(source: string): boolean {
 	if (/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith("file:")) return false;
 
 	const localSource = process.env.PI_AUTORESEARCH_LOCAL_SOURCE;
-	return Boolean(localSource) && normalizePathSource(source) === normalizePathSource(localSource);
+	return typeof localSource === "string" && localSource.length > 0 && normalizePathSource(source) === normalizePathSource(localSource);
 }
 
 function entrySource(entry: unknown): string | undefined {
