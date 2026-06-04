@@ -27,6 +27,7 @@ const SCOPE_COMPLETIONS = [
 	{ value: "--global", label: "--global (all projects)" },
 ] as const
 const POST_RUN_MEMORY_KEYWORDS = /\b(root cause|fixed by|solution|solved|lesson|learned|learning|pitfall|avoid|decision|decided|tradeoff|preference|pattern|regression|recurring|remember)\b/i
+const PROMPT_MEMORY_KEYWORDS = /\b(editorconfig|add|architecture|again|bug|build|change|check|configure|configuration|config|create|debug|decide|decided|decision|define|develop|development|design|edit|error|failing|failure|feature|fix|format|formatting|formatter|implementation|implement|implementing|init|initialize|layout|plan|planning|project|review|refactor|remember|regression|resolve|setup|similar|style|task|test|testing|troubleshoot|troubleshooting|workflow|lint|linter|preference|pitfall|learned|lesson|scaffold|bootstrap)\b/i
 const MAX_HARVEST_CANDIDATES = 5
 const MAX_PENDING_HARVEST_CANDIDATES = 12
 const MAX_HARVEST_CONTENT_CHARS = 900
@@ -608,7 +609,7 @@ function showText(ctx: ExtensionCommandContext | ExtensionContext, text: string)
 
 function shouldPrefetchMemory(prompt: string): boolean {
 	if (!prompt.trim() || prompt.trim().startsWith("/memory")) return false
-	return /\b(debug|bug|fix|failing|failure|error|regression|review|plan|planning|architecture|architectural|refactor|decision|decided|remember|preference|pitfall|learned|lesson|similar|again)\b/i.test(prompt)
+	return PROMPT_MEMORY_KEYWORDS.test(prompt)
 }
 
 function formatMemoryPreflight(results: SearchResult[]): string {
