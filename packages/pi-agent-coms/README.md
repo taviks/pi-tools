@@ -38,7 +38,7 @@ pi --coms-name reviewer --coms-room jm-migration --coms-purpose "Senior reviewer
 pi --coms-name legacy --coms-room jm-migration --coms-purpose "AngularJS source-of-truth"
 ```
 
-Widget mode can be set with `--coms-widget auto|compact|full|off` or `PI_AGENT_COMS_WIDGET`. The default `auto` mode keeps the full roster for small rooms and switches to a one-line compact widget in larger rooms. The full roster and dashboard show each seat's advertised role/persona from `purpose` plus `mode`.
+Widget mode can be set with `--coms-widget auto|compact|full|off` or `PI_AGENT_COMS_WIDGET`. The default `auto` mode keeps the full roster for small rooms and switches to a one-line compact widget in larger rooms. The full roster and dashboard show a compact role/persona slug.
 
 If `--coms-room` is omitted, the extension derives a friendly workspace room. Human-readable `.pi/workspace-id` values are used as-is; opaque UUID/hex workspace IDs become `<workspace-slug>-<short-id>` (for example, `pi-tools-052095dd`). Without `.pi/workspace-id`, it falls back to a stable slug derived from the workspace directory.
 

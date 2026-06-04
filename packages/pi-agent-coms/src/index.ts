@@ -362,15 +362,14 @@ function presenceSuffix(agent: { purpose?: string; scope?: string; status?: stri
 	return summary ? ` — ${summary}` : ""
 }
 
-function rolePersonaLabel(agent: { purpose?: string; mode?: string }): string {
+function rolePersonaSlug(agent: { purpose?: string; mode?: string }): string {
 	const purpose = agent.purpose?.trim()
 	const mode = agent.mode?.trim()
-	if (purpose && mode && purpose.toLowerCase() !== mode.toLowerCase()) return `${purpose}/${mode}`
-	return purpose || mode || ""
-}
-
-function shortPresence(agent: { scope?: string; status?: string; reasoning?: string }): string {
-	return agent.status || agent.scope || agent.reasoning || ""
+	const preset = ROLE_LENS_NAMES.find((role) => {
+		const lens = ROLE_LENS_PRESETS[role]
+		return lens.mode.toLowerCase() === mode?.toLowerCase() || lens.purpose.toLowerCase() === purpose?.toLowerCase()
+	})
+	return preset || safeSegment(purpose || mode || "", "").slice(0, 18)
 }
 
 function roleLensList(): string {
@@ -1065,8 +1064,8 @@ function renderDashboardPlain(data: DashboardData): string[] {
 		`agents: ${data.peers.length + 1} (${alive + 1} alive${stale ? `, ${stale} stale` : ""}) · unread: ${data.unread} · inbound queue: ${data.inbound_queue} · pending: ${data.pending.length}`,
 		"",
 		"Agents:",
-		`● ${data.self.name} (self) role:${rolePersonaLabel(data.self) || "(none)"} ${data.self.model}${data.self.context_used_pct == null ? "" : ` ${data.self.context_used_pct}%`}${presenceSuffix(data.self)}`,
-		...data.peers.map((peer) => `${peer.is_working ? "◐" : peer.alive ? "●" : "○"} ${peer.name} role:${rolePersonaLabel(peer) || "(none)"} ${peer.model}${peer.context_used_pct == null ? "" : ` ${peer.context_used_pct}%`}${presenceSuffix(peer)}`),
+		`● ${data.self.name} (self) role:${rolePersonaSlug(data.self) || "(none)"} ${data.self.model}${data.self.context_used_pct == null ? "" : ` ${data.self.context_used_pct}%`}`,
+		...data.peers.map((peer) => `${peer.is_working ? "◐" : peer.alive ? "●" : "○"} ${peer.name} role:${rolePersonaSlug(peer) || "(none)"} ${peer.model}${peer.context_used_pct == null ? "" : ` ${peer.context_used_pct}%`}`),
 		"",
 		"Pending:",
 		...(data.pending.length ? data.pending.map((item) => `→ ${item.target} ${formatAge(item.created_at)} ${item.msg_id} ${item.preview}`) : ["none"]),
@@ -1166,12 +1165,12 @@ function renderDashboard(width: number, theme: Theme, data: DashboardData, state
 		const dot = agent.is_working ? theme.fg("warning", "◐") : agent.alive ? theme.fg("success", "●") : theme.fg("dim", "○")
 		const name = fitAnsi(hexFg(agent.color, agent.name), 14, "")
 		const self = agent.self ? theme.fg("dim", " self") : ""
-		const role = fitAnsi(theme.fg(rolePersonaLabel(agent) ? "accent" : "dim", rolePersonaLabel(agent) || "—"), 18, "")
+		const roleSlug = rolePersonaSlug(agent)
+		const role = fitAnsi(theme.fg(roleSlug ? "accent" : "dim", roleSlug || "—"), 14, "")
 		const model = fitAnsi(theme.fg("dim", modelLabel(agent.model)), 12, "")
 		const queue = agent.queue == null ? theme.fg("dim", "q:-") : agent.queue > 0 ? theme.fg("warning", `q:${agent.queue}`) : theme.fg("dim", "q:0")
 		const unread = agent.unread == null ? theme.fg("dim", "in:-") : agent.unread > 0 ? theme.fg("warning", `in:${agent.unread}`) : theme.fg("dim", "in:0")
-		const presence = presenceSuffix(agent)
-		lines.push(row(`${dot} ${name}${self} ${role} ${model} ${contextPct(theme, agent.context)} ${queue} ${unread}${presence ? theme.fg("muted", presence) : ""}`))
+		lines.push(row(`${dot} ${name}${self} ${role} ${model} ${contextPct(theme, agent.context)} ${queue} ${unread}`))
 	}
 
 	lines.push(row())
@@ -1663,7 +1662,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		}
 
 		const border = safeWidth >= 2 ? theme.fg("dim", "━".repeat(safeWidth)) : ""
-		const selfRole = rolePersonaLabel(identity)
+		const selfRole = rolePersonaSlug(identity)
 		const selfRoleText = selfRole ? ` ${theme.fg("accent", `[${selfRole}]`)}` : ""
 		const title = `${theme.fg("accent", "coms")} ${hexFg(identity.color, identity.name)}${theme.fg("dim", `@${identity.room}`)}${selfRoleText} ${theme.fg("muted", `${peers.length} peer${peers.length === 1 ? "" : "s"}`)}${unread ? theme.fg("warning", ` · ${unread} unread`) : ""}${pending ? theme.fg("warning", ` · ${pending} pending`) : ""}`
 
@@ -1683,14 +1682,12 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			const dot = peer.is_working ? activeSpinner(theme) : peer.alive ? " " : theme.fg("dim", "○")
 			const queue = peer.queue_depth && peer.queue_depth > 0 ? theme.fg("warning", ` q:${peer.queue_depth}`) : ""
 			const unreadPeer = peer.inbox_unread && peer.inbox_unread > 0 ? theme.fg("warning", ` inbox:${peer.inbox_unread}`) : ""
-			const role = rolePersonaLabel(peer)
-			const roleText = role ? ` ${fitAnsi(theme.fg("accent", `[${role}]`), 20, "")}` : ""
-			const presence = shortPresence(peer)
-			const presenceText = presence ? theme.fg("muted", ` — ${presence}`) : ""
+			const role = rolePersonaSlug(peer)
+			const roleText = role ? ` ${fitAnsi(theme.fg("accent", `[${role}]`), 14, "")}` : ""
 			const model = theme.fg("dim", peer.model.slice(0, 16).padEnd(16))
 			lines.push(
 				truncateToWidth(
-					` ${dot} ${hexFg(peer.color, peer.name.padEnd(12))}${roleText} ${model} ${contextBar(peer.context_used_pct, peer.color)}${queue}${unreadPeer}${presenceText}`,
+					` ${dot} ${hexFg(peer.color, peer.name.padEnd(12))}${roleText} ${model} ${contextBar(peer.context_used_pct, peer.color)}${queue}${unreadPeer}`,
 					safeWidth,
 					"…",
 					true,
