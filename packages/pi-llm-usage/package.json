@@ -1,6 +1,7 @@
 {
   "name": "pi-llm-usage",
   "version": "0.1.0",
+  "private": true,
   "description": "Pi extension to check Anthropic and OpenAI subscription usage",
   "license": "MIT",
   "keywords": [

@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/
 coverage/
+packages/**/pnpm-lock.yaml
 
 # Python/runtime caches
 __pycache__/

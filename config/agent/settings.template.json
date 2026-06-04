@@ -4,7 +4,7 @@
     "~/path/to/pi-tools/packages/pi-agent-handoff",
     "~/path/to/pi-tools"
   ],
-  "defaultThinkingLevel": "xhigh",
+  "defaultThinkingLevel": "high",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
   "transport": "auto",
