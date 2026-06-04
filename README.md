@@ -84,7 +84,7 @@ Use `/memory pending` to review passively queued candidates, or `/memory harvest
 - `packages/pi-workspace-id/` — `piw` wrapper for stable workspace session dirs and handoff dirs.
 - `packages/pi-llm-usage/` — `/usage` overlay for subscription/API usage checks.
 - `packages/pi-agent-handoff/` — `/handoff` commands and LLM-callable handoff artifact tooling.
-- `packages/pi-agent-coms/` — standalone local room-based peer messaging between Pi agents.
+- `packages/pi-agent-coms/` — standalone local room-based peer messaging between Pi agents, with dynamic profile/presence updates and a fixed-seat room skill.
 - `packages/allowlisted-web/` — project-local read-only allowlisted web fetch extension.
 
 ## Config templates
