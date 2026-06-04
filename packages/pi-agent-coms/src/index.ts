@@ -15,6 +15,7 @@ const VERSION = 1
 
 const DEFAULT_HOME = path.join(os.homedir(), ".pi", "agent-coms")
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000
+const DEFAULT_NEXT_TIMEOUT_MS = 60 * 1000
 const CONNECT_TIMEOUT_MS = 8_000
 const PING_INTERVAL_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 15_000
@@ -265,6 +266,12 @@ interface PendingReplySnapshot {
 	created_at: string
 	kind: MessageKind
 	preview: string
+}
+
+interface InboxWaiter {
+	kind?: MessageKind
+	resolve: (record: StoredMessage | null) => void
+	timer: NodeJS.Timeout | null
 }
 
 interface DashboardData {
@@ -1343,8 +1350,21 @@ type InboxParamsType = {
 	markRead?: boolean
 }
 
+const NextParams = Type.Object({
+	timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: DEFAULT_TIMEOUT_MS, description: "Max time to wait for an unread inbound peer message. Defaults to 60 seconds." })),
+	kind: Type.Optional(StringEnum(MESSAGE_KINDS, { description: "Only return this message kind." })),
+	markRead: Type.Optional(Type.Boolean({ description: "Mark the returned message read. Defaults true." })),
+})
+
+type NextParamsType = {
+	timeoutMs?: number
+	kind?: MessageKind
+	markRead?: boolean
+}
+
 const AwaitParams = Type.Object({
 	msgId: Type.String({ description: "Message id returned by coms_send/coms_broadcast for an outbound ask." }),
+	// Keep this tool focused on one msgId. For fan-out coordination, use coms_next to read whichever peer replies first.
 	timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: DEFAULT_TIMEOUT_MS, description: "Timeout in milliseconds. Defaults to 30 minutes." })),
 })
 
@@ -1399,6 +1419,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	const inbox: StoredMessage[] = []
 	const pendingReplies = new Map<string, PendingReply>()
 	const inboundAutoReplies = new Map<string, StoredMessage>()
+	const inboxWaiters = new Set<InboxWaiter>()
 	const peerCache = new Map<string, PeerSnapshot>()
 	let widgetMode: WidgetMode = normalizeWidgetMode(process.env.PI_AGENT_COMS_WIDGET)
 
@@ -1437,6 +1458,107 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		} catch {
 			// best effort
 		}
+	}
+
+	function findNextUnread(kind?: MessageKind): StoredMessage | undefined {
+		return inbox.find((msg) => msg.unread && (!kind || msg.kind === kind))
+	}
+
+	function persistInboxReadState(record: StoredMessage): void {
+		if (!persistInboxEnabled()) return
+		try {
+			pi.appendEntry(CUSTOM_ENTRY_TYPE, record)
+		} catch {
+			// best effort
+		}
+	}
+
+	function markInboxMessageRead(record: StoredMessage | undefined): void {
+		if (!record || !record.unread) return
+		record.unread = false
+		persistInboxReadState(record)
+		if (currentCtx?.hasUI) installWidget(currentCtx)
+	}
+
+	function markReplyRead(result: ReplyResult | undefined): void {
+		if (!result?.reply_msg_id) return
+		markInboxMessageRead(inbox.find((msg) => msg.id === result.reply_msg_id))
+	}
+
+	function settleInboxWaiters(record: StoredMessage): void {
+		for (const waiter of [...inboxWaiters]) {
+			if (!record.unread) return
+			if (waiter.kind && waiter.kind !== record.kind) continue
+			inboxWaiters.delete(waiter)
+			if (waiter.timer) clearTimeout(waiter.timer)
+			waiter.resolve(record)
+			return
+		}
+	}
+
+	function waitForNextUnread(kind: MessageKind | undefined, timeoutMs: number, signal?: AbortSignal): Promise<StoredMessage | null> {
+		const existing = findNextUnread(kind)
+		if (existing) return Promise.resolve(existing)
+		return new Promise((resolve) => {
+			let settled = false
+			const waiter: InboxWaiter = {
+				kind,
+				resolve: (record) => {
+					if (settled) return
+					settled = true
+					if (waiter.timer) clearTimeout(waiter.timer)
+					if (signal) signal.removeEventListener("abort", onAbort)
+					resolve(record)
+				},
+				timer: null,
+			}
+			const onAbort = () => {
+				if (settled) return
+				settled = true
+				inboxWaiters.delete(waiter)
+				if (waiter.timer) clearTimeout(waiter.timer)
+				resolve(null)
+			}
+			if (signal?.aborted) {
+				resolve(null)
+				return
+			}
+			waiter.timer = setTimeout(() => {
+				if (settled) return
+				settled = true
+				inboxWaiters.delete(waiter)
+				resolve(null)
+			}, timeoutMs)
+			try {
+				waiter.timer.unref()
+			} catch {
+				// ignore
+			}
+			if (signal) signal.addEventListener("abort", onAbort, { once: true })
+			inboxWaiters.add(waiter)
+		})
+	}
+
+	function messageToolDetails(record: StoredMessage, status = "message"): Record<string, unknown> {
+		return {
+			status,
+			kind: record.kind,
+			message: record.message,
+			response: record.response,
+			from: record.from.name,
+			msg_id: record.id,
+			reply_to: record.reply_to ?? undefined,
+			thread_id: record.thread_id,
+			error: record.error ?? undefined,
+			unread: unreadCount(),
+			pending: pendingReplyCount(),
+		}
+	}
+
+	function messageToolText(record: StoredMessage): string {
+		const replyTo = record.reply_to ? ` reply_to: ${record.reply_to}` : ""
+		const body = record.error ? `Error: ${record.error}` : record.response !== undefined ? compactJson(record.response) : record.message
+		return `${record.kind} from ${record.from.name}${replyTo}\n${body}`
 	}
 
 	function isAgentWorking(ctx: ExtensionContext | null): boolean {
@@ -2023,6 +2145,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			const kind: NotifyKind = env.kind === "ask" ? "warning" : "info"
 			currentCtx.ui.notify(`coms ${record.kind} from ${record.from.name}: ${record.message.replace(/\s+/g, " ").slice(0, 120)}`, kind)
 		}
+		settleInboxWaiters(record)
 
 		ack(socket, env.msg_id)
 	}
@@ -2649,17 +2772,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			if (params.threadId) messages = messages.filter((msg) => msg.thread_id === params.threadId)
 			messages = messages.slice(-limit).reverse()
 			if (params.markRead) {
-				for (const message of messages) {
-					message.unread = false
-					if (persistInboxEnabled()) {
-						try {
-							pi.appendEntry(CUSTOM_ENTRY_TYPE, message)
-						} catch {
-							// best effort
-						}
-					}
-				}
-				if (currentCtx?.hasUI) installWidget(currentCtx)
+				for (const message of messages) markInboxMessageRead(message)
 			}
 			return {
 				content: [{ type: "text", text: messages.length ? messages.map(formatMessageSummary).join("\n\n") : "Inbox empty." }],
@@ -2677,19 +2790,61 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerTool({
+		name: "coms_next",
+		label: "Coms Next",
+		description: "Wait for/read the next unread inbound peer message without waiting for all pending asks. Useful after fan-out: process whichever reply/status arrives first while other asks remain pending.",
+		promptSnippet: "Wait for or read the next unread inbound agent-coms message.",
+		promptGuidelines: [
+			"Use coms_next after sending multiple peer asks so replies can be processed as they arrive instead of serially awaiting the slowest msgId.",
+			"For a quick non-blocking check, call coms_inbox with unreadOnly; for one known msgId, use coms_get.",
+		],
+		parameters: NextParams,
+		async execute(_toolCallId, params: NextParamsType, signal): Promise<any> {
+			const record = await waitForNextUnread(params.kind, params.timeoutMs ?? DEFAULT_NEXT_TIMEOUT_MS, signal)
+			if (!record) {
+				return {
+					content: [{ type: "text", text: "no unread messages before timeout" }],
+					details: { status: signal?.aborted ? "aborted" : "timeout", unread: unreadCount(), pending: pendingReplyCount() },
+				}
+			}
+			const text = messageToolText(record)
+			if (params.markRead ?? true) markInboxMessageRead(record)
+			return {
+				content: [{ type: "text", text }],
+				details: messageToolDetails(record),
+			}
+		},
+		renderCall(args, theme) {
+			const a = args as NextParamsType
+			const kind = a.kind ? ` ${a.kind}` : ""
+			return new Text(theme.fg("toolTitle", theme.bold("coms_next")) + theme.fg("muted", kind), 0, 0)
+		},
+		renderResult(result, _options, theme) {
+			const d = result.details as { status?: string; kind?: string; from?: string; error?: string } | undefined
+			if (d?.error) return new Text(theme.fg("error", d.error), 0, 0)
+			if (d?.status === "timeout" || d?.status === "aborted") return new Text(theme.fg("warning", d.status), 0, 0)
+			return new Text(theme.fg("success", d?.kind ? `${d.kind} received` : "message received") + theme.fg("muted", d?.from ? ` from ${d.from}` : ""), 0, 0)
+		},
+	})
+
+	pi.registerTool({
 		name: "coms_get",
 		label: "Coms Get",
-		description: "Non-blocking check for a reply to an outbound agent-coms ask/message id.",
+		description: "Non-blocking check for a reply to an outbound agent-coms ask/message id. For multiple outstanding asks, use coms_next to process whichever peer replies first.",
 		promptSnippet: "Check whether a peer has replied to a prior coms_send ask.",
 		parameters: AwaitParams,
 		async execute(_toolCallId, params: AwaitParamsType): Promise<any> {
 			const pending = pendingReplies.get(params.msgId)
 			if (pending?.result) {
+				markReplyRead(pending.result)
 				return { content: [{ type: "text", text: replyDisplayText(pending.result) }], details: pending.result }
 			}
 			if (pending) return { content: [{ type: "text", text: "pending" }], details: { status: "pending", msg_id: params.msgId, target: pending.target, thread_id: pending.thread_id } }
 			const reply = [...inbox].reverse().find((msg) => msg.kind === "reply" && msg.reply_to === params.msgId)
-			if (reply) return { content: [{ type: "text", text: reply.error ? `Error: ${reply.error}` : reply.response !== undefined ? compactJson(reply.response) : reply.message }], details: { status: reply.error ? "error" : "complete", message: reply.message, response: reply.response, from: reply.from.name, reply_msg_id: reply.id, thread_id: reply.thread_id, error: reply.error ?? undefined } }
+			if (reply) {
+				markInboxMessageRead(reply)
+				return { content: [{ type: "text", text: reply.error ? `Error: ${reply.error}` : reply.response !== undefined ? compactJson(reply.response) : reply.message }], details: { status: reply.error ? "error" : "complete", message: reply.message, response: reply.response, from: reply.from.name, reply_msg_id: reply.id, thread_id: reply.thread_id, error: reply.error ?? undefined } }
+			}
 			return { content: [{ type: "text", text: `unknown msgId ${params.msgId}` }], details: { status: "error", error: "unknown msgId", msg_id: params.msgId } }
 		},
 		renderCall(args, theme) {
@@ -2707,17 +2862,24 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "coms_await",
 		label: "Coms Await",
-		description: "Wait for a reply to an outbound agent-coms ask/message id. Default timeout is 30 minutes.",
+		description: "Wait for one specific reply to an outbound agent-coms ask/message id. Default timeout is 30 minutes. For multiple outstanding asks, prefer coms_next so other replies can be read as they arrive.",
 		promptSnippet: "Wait for a peer reply to a prior coms_send ask.",
+		promptGuidelines: ["Avoid serial coms_await calls after fan-out; use coms_next or coms_inbox unreadOnly to process already-arrived peer messages while other asks remain pending."],
 		parameters: AwaitParams,
 		async execute(_toolCallId, params: AwaitParamsType, signal): Promise<any> {
 			const pending = pendingReplies.get(params.msgId)
 			if (!pending) {
 				const reply = [...inbox].reverse().find((msg) => msg.kind === "reply" && msg.reply_to === params.msgId)
-				if (reply) return { content: [{ type: "text", text: reply.error ? `Error: ${reply.error}` : reply.response !== undefined ? compactJson(reply.response) : reply.message }], details: { status: reply.error ? "error" : "complete", message: reply.message, response: reply.response, from: reply.from.name, reply_msg_id: reply.id, thread_id: reply.thread_id, error: reply.error ?? undefined } }
+				if (reply) {
+					markInboxMessageRead(reply)
+					return { content: [{ type: "text", text: reply.error ? `Error: ${reply.error}` : reply.response !== undefined ? compactJson(reply.response) : reply.message }], details: { status: reply.error ? "error" : "complete", message: reply.message, response: reply.response, from: reply.from.name, reply_msg_id: reply.id, thread_id: reply.thread_id, error: reply.error ?? undefined } }
+				}
 				throw new Error(`unknown msgId ${params.msgId}`)
 			}
-			if (pending.result) return { content: [{ type: "text", text: replyDisplayText(pending.result) }], details: pending.result }
+			if (pending.result) {
+				markReplyRead(pending.result)
+				return { content: [{ type: "text", text: replyDisplayText(pending.result) }], details: pending.result }
+			}
 
 			const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS
 			const timeout = new Promise<ReplyResult>((resolve) => {
@@ -2734,6 +2896,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				else signal.addEventListener("abort", () => resolve({ status: "error", error: "aborted", thread_id: pending.thread_id }), { once: true })
 			})
 			const result = await Promise.race([pending.promise, timeout, aborted])
+			markReplyRead(result)
 			return { content: [{ type: "text", text: replyDisplayText(result) }], details: result }
 		},
 		renderCall(args, theme) {

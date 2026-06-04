@@ -24,6 +24,7 @@ Coordinate persistent senior-dev seats without turning `agent-coms` into a task 
 - Give one seat clear implementation ownership for a file/scope unless an explicit handoff occurs.
 - Ask reviewers/verifiers for concise findings only unless you explicitly want edits.
 - Ask for status updates at milestones and before synthesis.
+- After sending multiple asks, read replies incrementally as they arrive: prefer `coms_next` or `coms_inbox`/`coms_get` polling over serial `coms_await` calls that block on one slow peer while other replies sit unread.
 - Verify peer claims before final user-facing conclusions.
 
 ## Good targeted asks
