@@ -1,18 +1,18 @@
 {
-	"name": "pi-llm-usage",
-	"version": "0.1.0",
-	"description": "Pi extension to check Anthropic and OpenAI subscription usage",
-	"license": "MIT",
-	"keywords": [
-		"pi-package"
-	],
-	"pi": {
-		"extensions": [
-			"./src/index.ts"
-		]
-	},
-	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*"
-	}
+  "name": "pi-llm-usage",
+  "version": "0.1.0",
+  "description": "Pi extension to check Anthropic and OpenAI subscription usage",
+  "license": "MIT",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
 }

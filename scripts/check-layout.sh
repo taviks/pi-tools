@@ -25,12 +25,15 @@ done
 
 python3 - <<'PY'
 import json
+import subprocess
 from pathlib import Path
-for path in [
-    'package.json',
-    'config/agent/settings.template.json',
-    'config/project/example/settings.template.json',
-]:
+
+try:
+    paths = subprocess.check_output(['git', 'ls-files', '*.json'], text=True).splitlines()
+except (FileNotFoundError, subprocess.CalledProcessError):
+    paths = sorted(str(path) for path in Path('.').rglob('*.json') if 'node_modules' not in path.parts)
+
+for path in paths:
     json.loads(Path(path).read_text())
     print(f'json ok: {path}')
 PY

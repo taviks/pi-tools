@@ -12,6 +12,7 @@
     "packages/*"
   ],
   "scripts": {
+    "check": "pnpm -s check:layout && pnpm -s typecheck",
     "check:layout": "bash scripts/check-layout.sh",
     "typecheck": "tsc --noEmit",
     "pi:link-config": "bash scripts/link-agent-config.sh --apply"
