@@ -72,7 +72,7 @@ Then agents switch lenses as needed:
 { "role": "reviewer", "scope": "packages/pi-agent-coms/src/index.ts trust boundaries", "reasoning": "high" }
 ```
 
-See `docs/fixed-seat-workflow.md` for the full workflow and when to prefer subagents instead. If skill commands are enabled, use `/skill:coms-fixed-seat-room` to have Pi generate the launch commands, lead prompt, and role-lens plan for a task.
+See `docs/fixed-seat-workflow.md` for the full workflow and when to prefer subagents instead. If skill commands are enabled, use `/skill:coms-fixed-seat-room` to have Pi generate copy-paste launch commands with absolute prompt paths, plus the lead prompt and role-lens plan for a task.
 
 ## Tools
 

@@ -1,6 +1,6 @@
 ---
 name: coms-fixed-seat-room
-description: Set up and operate an agent-coms fixed-seat war room. Use when the user wants to open several Pi/Ghostty panes, coordinate persistent peer agents, choose lead/flex seats, generate launch commands, assign role lenses, or decide between coms room collaboration and subagent orchestration.
+description: Set up and operate an agent-coms fixed-seat war room. Use when the user wants to open several Pi panes, coordinate persistent peer agents, choose lead/flex seats, generate launch commands, assign role lenses, or decide between coms room collaboration and subagent orchestration.
 ---
 
 # agent-coms Fixed-Seat Room
@@ -24,19 +24,25 @@ Use **fixed seats, dynamic role lenses**:
 When the user wants to start a room, ask only for missing essentials:
 
 1. room name/slug, if not obvious from task;
-2. seat count, default 3 flex seats for serious work, 2 for normal work;
-3. whether they want copy-paste commands or a Ghostty launch script.
+2. seat count, default 3 flex seats for serious work, 2 for normal work.
 
-Then provide exact commands. Prefer package prompt paths:
+Then provide exact copy-paste commands. Do not offer or generate terminal-launcher scripts.
+
+To make commands work from any current directory, always use absolute prompt paths. Resolve them from this skill's directory:
+
+- `../../prompts/lead-seat.md`
+- `../../prompts/flex-seat.md`
+
+For example, if this skill was loaded from `/path/to/pi-agent-coms/skills/coms-fixed-seat-room/SKILL.md`, use `/path/to/pi-agent-coms/prompts/lead-seat.md` and `/path/to/pi-agent-coms/prompts/flex-seat.md`.
 
 ```bash
-pi --coms-name lead --coms-room <room> --append-system-prompt packages/pi-agent-coms/prompts/lead-seat.md
-pi --coms-name seat-a --coms-room <room> --append-system-prompt packages/pi-agent-coms/prompts/flex-seat.md
-pi --coms-name seat-b --coms-room <room> --append-system-prompt packages/pi-agent-coms/prompts/flex-seat.md
-pi --coms-name seat-c --coms-room <room> --append-system-prompt packages/pi-agent-coms/prompts/flex-seat.md
+pi --coms-name lead --coms-room <room> --append-system-prompt "/absolute/path/to/pi-agent-coms/prompts/lead-seat.md"
+pi --coms-name seat-a --coms-room <room> --append-system-prompt "/absolute/path/to/pi-agent-coms/prompts/flex-seat.md"
+pi --coms-name seat-b --coms-room <room> --append-system-prompt "/absolute/path/to/pi-agent-coms/prompts/flex-seat.md"
+pi --coms-name seat-c --coms-room <room> --append-system-prompt "/absolute/path/to/pi-agent-coms/prompts/flex-seat.md"
 ```
 
-If the current working directory is not the `pi-tools` repo, tell the user to replace the prompt paths with absolute paths to the installed package prompts.
+Do not tell the user to replace paths manually when the absolute package prompt paths can be derived from the loaded skill location.
 
 ## Lead instruction packet
 
