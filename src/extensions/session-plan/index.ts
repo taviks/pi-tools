@@ -22,6 +22,7 @@ import {
 
 const STATUS_KEY = "session-plan"
 const WIDGET_KEY = "session-plan"
+const USER_CHOICE_ACTIVE_EVENT = "user-choice:active"
 const STATE_ENTRY_TYPE = "session-plan-state"
 const TASK_CONTEXT_TYPE = "session-plan:task-list-context"
 const STALE_CONTEXT_TYPES = new Set(["session-plan:planning", "session-plan:review", "session-plan:execution", TASK_CONTEXT_TYPE])
@@ -183,6 +184,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	let spinnerTick = 0
 	let spinnerTicker: ReturnType<typeof setInterval> | undefined
 	let latestContext: ExtensionContext | undefined
+	let userChoiceActive = false
 
 	const stopSpinnerTicker = () => {
 		if (!spinnerTicker) return
@@ -253,14 +255,20 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		latestContext = target
 
 		const theme = target.ui.theme
+
+		if (userChoiceActive) {
+			target.ui.setStatus(STATUS_KEY, undefined)
+			target.ui.setWidget(WIDGET_KEY, undefined)
+			return
+		}
+
 		const progress = summarizeProgress(steps)
 		const complete = isPlanComplete(steps)
 
-		if (working) {
+		if (working && steps.length > 0) {
 			const spinner = PLANNING_SPINNER_FRAMES[spinnerTick % PLANNING_SPINNER_FRAMES.length]
 			const elapsed = workingStartedAt ? ` · ${formatElapsed(Date.now() - workingStartedAt)}` : ""
-			const summary = steps.length > 0 ? ` · ${progress.done}/${progress.total}` : ""
-			target.ui.setStatus(STATUS_KEY, theme.fg("warning", `${spinner} plan${summary}${elapsed}`))
+			target.ui.setStatus(STATUS_KEY, theme.fg("warning", `${spinner} plan · ${progress.done}/${progress.total}${elapsed}`))
 		} else if (complete) {
 			target.ui.setStatus(STATUS_KEY, theme.fg("success", "✓ plan complete · clears next prompt"))
 		} else if (steps.length > 0) {
@@ -273,21 +281,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		}
 
 		if (steps.length === 0) {
-			if (working && autoPlanEnabled) {
-				const spinner = PLANNING_SPINNER_FRAMES[spinnerTick % PLANNING_SPINNER_FRAMES.length]
-				const elapsed = workingStartedAt ? formatElapsed(Date.now() - workingStartedAt) : "0s"
-				const lines = [
-					theme.fg("toolTitle", theme.bold("Plan")) + " " + theme.fg("dim", "(starting)"),
-					"",
-				]
-				pushTaskPreviewLines(lines, theme, "Request", originalRequest || "Current request")
-				lines.push("")
-				lines.push(theme.fg("warning", `${spinner} waiting for plan / response`))
-				lines.push(theme.fg("muted", `Elapsed: ${elapsed} · same-turn plan mode`))
-				target.ui.setWidget(WIDGET_KEY, () => new Text(lines.join("\n"), 0, 0))
-			} else {
-				target.ui.setWidget(WIDGET_KEY, undefined)
-			}
+			target.ui.setWidget(WIDGET_KEY, undefined)
 			return
 		}
 
@@ -328,6 +322,11 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 
 		target.ui.setWidget(WIDGET_KEY, () => new Text(lines.join("\n"), 0, 0))
 	}
+
+	pi.events.on(USER_CHOICE_ACTIVE_EVENT, (event: unknown) => {
+		userChoiceActive = typeof event === "boolean" ? event : !!(event && typeof event === "object" && "active" in event && event.active === true)
+		updateUI(latestContext)
+	})
 
 	const unsubscribeTaskPreview = subscribeTaskPreview(() => {
 		updateUI(latestContext)

@@ -238,6 +238,19 @@ Use `P0` sparingly and never expose secrets.
 
 ## Phase 5 — Output format
 
+After writing the audit report, prefer the generic `user_choice` tool when it is available. Call it only after the findings and proposed plan are visible. Do **not** include a `Next steps / confirmation needed` section in the report when using the interactive picker.
+
+Use this picker shape:
+
+- Title: `Agentic readiness — next action`
+- Message: `No files have been changed. Choose what to do with this remediation plan.`
+- `implement_all` — label `Implement the full remediation plan`; description `Apply every proposed readiness improvement.`
+- `implement_selected` — label `Choose items to implement (type IDs)`; description `Examples: a1-3 a5`; required text input placeholder `a1-3 a5`.
+- `revise_plan` — label `Revise the plan first (type request)`; description `Describe what to reorder, remove, or change.`; required text input placeholder `e.g. skip CI and focus docs only`.
+- `reject` — label `Do not make changes`; description `End the audit without implementation.`
+
+Leave `includeOther` unset unless the user explicitly wants to opt out; `user_choice` adds a `Something else (type)` option by default. If `user_choice` is unavailable, cancelled, or running without interactive UI, ask for a concise text reply after the report instead. Treat a `user_choice` result exactly like user approval text; do not edit before it requests implementation.
+
 Use this structure:
 
 ```markdown
@@ -279,23 +292,17 @@ Use this structure:
 ### Not recommended / deferred
 - Items considered but not recommended, with a brief reason.
 
-### Next steps / confirmation needed
-Use numbered replies so approval is fast and unambiguous:
-1. `1` — implement the full plan
-2. `2 A1 A3` — implement selected item IDs only
-3. `3 ...` — revise scope/order/details before implementation
-4. `4` — do not make changes
-
-A bare `2` is not enough; ask which item IDs to implement before editing.
 ```
+
+For non-interactive fallback only, ask one concise text question after the report: `Reply 1 to implement all, 2 a1-3 to implement selected items, 3 ... to revise, or 4 to stop.` Item IDs are case-insensitive; ranges like `a1-3` and `a1-a3` are acceptable. A bare `2` is not enough; ask which item IDs to implement before editing.
 
 If there are no substantive findings, say so clearly, list what you checked, and offer only optional improvements.
 
 ## Phase 6 — After approval
 
-When the user approves implementation:
+When the user approves implementation by text reply or `user_choice` result:
 
-1. Restate the approved item IDs.
+1. Restate the approved item IDs, expanding any ranges and normalizing case before editing.
 2. Make the smallest focused edits for those items.
 3. Preserve existing conventions unless the approved change explicitly establishes a convention.
 4. Avoid unrelated formatting churn.
