@@ -12,49 +12,49 @@
  * Uses JSON mode to capture structured output from subagents.
  */
 
-import { spawn } from "node:child_process";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-ai";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { keyHint, type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
-import { FAST_MODE_ENV_KEY, FAST_SERVICE_TIER_ENV_KEY, getFastModeState } from "../../lib/fast-mode-state.js";
-import { installSlashCommandArgumentAutocomplete } from "../../lib/slash-command-autocomplete.js";
-import { TASK_PREVIEW_SHORTCUT_LABEL, ensureTaskPreviewShortcut, getTaskPreview } from "../../lib/task-preview-state.js";
+import { spawn } from "node:child_process"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import type { AgentToolResult } from "@earendil-works/pi-agent-core"
+import type { Message } from "@earendil-works/pi-ai"
+import { StringEnum } from "@earendil-works/pi-ai"
+import { keyHint, type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent"
+import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui"
+import { Type } from "typebox"
+import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js"
+import { FAST_MODE_ENV_KEY, FAST_SERVICE_TIER_ENV_KEY, getFastModeState } from "../../lib/fast-mode-state.js"
+import { installSlashCommandArgumentAutocomplete } from "../../lib/slash-command-autocomplete.js"
+import { TASK_PREVIEW_SHORTCUT_LABEL, ensureTaskPreviewShortcut, getTaskPreview } from "../../lib/task-preview-state.js"
 
-const MAX_PARALLEL_TASKS = 16;
-const MAX_CONCURRENCY = 10;
-const COLLAPSED_ITEM_COUNT = 10;
-const MAX_BACKGROUND_ACTIVE_JOBS = 2;
-const MAX_BACKGROUND_STORED_JOBS = 24;
-const MAX_WIDGET_JOBS = 6;
-const DEFAULT_WIDGET_AGENT_LIMIT = 4;
-const MAX_WIDGET_AGENT_LIMIT = 99;
-const MAX_WIDGET_TYPE_LINES = 5;
-const WIDGET_SPINNER_INTERVAL_MS = 400;
-const SUBAGENT_WIDGET_KEY = "subagent-jobs";
-const SUBAGENT_STATUS_KEY = "subagent-jobs";
-const PROJECT_AGENT_TRUST_ENV_KEY = "PI_SUBAGENT_TRUST_PROJECT_AGENTS";
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-const MODEL_RETRY_COOLDOWN_MS = 90_000;
-const EXECUTION_SLOT_POLL_MS = 150;
+const MAX_PARALLEL_TASKS = 16
+const MAX_CONCURRENCY = 10
+const COLLAPSED_ITEM_COUNT = 10
+const MAX_BACKGROUND_ACTIVE_JOBS = 2
+const MAX_BACKGROUND_STORED_JOBS = 24
+const MAX_WIDGET_JOBS = 6
+const DEFAULT_WIDGET_AGENT_LIMIT = 4
+const MAX_WIDGET_AGENT_LIMIT = 99
+const MAX_WIDGET_TYPE_LINES = 5
+const WIDGET_SPINNER_INTERVAL_MS = 400
+const SUBAGENT_WIDGET_KEY = "subagent-jobs"
+const SUBAGENT_STATUS_KEY = "subagent-jobs"
+const PROJECT_AGENT_TRUST_ENV_KEY = "PI_SUBAGENT_TRUST_PROJECT_AGENTS"
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
+const MODEL_RETRY_COOLDOWN_MS = 90_000
+const EXECUTION_SLOT_POLL_MS = 150
 
 const PROVIDER_CONCURRENCY_LIMITS: Record<string, number> = {
 	"openai-codex": 3,
 	openai: 3,
 	anthropic: 2,
 	google: 2,
-};
+}
 
 const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
 	"openai-codex/gpt-5.5": 4,
 	"openai-codex/gpt-5.3-codex": 4,
-};
+}
 
 const RETRYABLE_FAILURE_PATTERNS = [
 	/\b429\b/i,
@@ -73,11 +73,11 @@ const RETRYABLE_FAILURE_PATTERNS = [
 	/model[^\n]*not\s+supported/i,
 	/not\s+supported\s+when\s+using/i,
 	/retrying\s+in/i,
-];
+]
 
-const UNSTABLE_MODEL_PATTERNS = [/gemini/i, /minimax/i, /grok/i];
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+const UNSTABLE_MODEL_PATTERNS = [/gemini/i, /minimax/i, /grok/i]
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 
 const CANONICAL_MODEL_IDS: Record<string, string> = {
 	"gpt-5.5": "openai-codex/gpt-5.5",
@@ -85,13 +85,13 @@ const CANONICAL_MODEL_IDS: Record<string, string> = {
 	"gpt-5.4-mini": "openai-codex/gpt-5.4-mini",
 	"gpt-5.3-codex": "openai-codex/gpt-5.3-codex",
 	"gpt-5.3-codex-spark": "openai-codex/gpt-5.3-codex-spark",
-};
+}
 
 interface CategoryRoutingConfig {
-	model?: string;
-	thinkingLevel?: ThinkingLevel;
-	fallbackModels?: string[];
-	unstable?: boolean;
+	model?: string
+	thinkingLevel?: ThinkingLevel
+	fallbackModels?: string[]
+	unstable?: boolean
 }
 
 const CATEGORY_ROUTING: Record<string, CategoryRoutingConfig> = {
@@ -170,12 +170,12 @@ const CATEGORY_ROUTING: Record<string, CategoryRoutingConfig> = {
 		thinkingLevel: "low",
 		fallbackModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"],
 	},
-};
+}
 
 interface AgentTypeModelHierarchy {
-	primaryModel?: string;
-	thinkingLevel?: ThinkingLevel;
-	fallbackModels?: string[];
+	primaryModel?: string
+	thinkingLevel?: ThinkingLevel
+	fallbackModels?: string[]
 }
 
 const AGENT_TYPE_MODEL_HIERARCHY: Record<string, AgentTypeModelHierarchy> = {
@@ -214,194 +214,194 @@ const AGENT_TYPE_MODEL_HIERARCHY: Record<string, AgentTypeModelHierarchy> = {
 		thinkingLevel: "medium",
 		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
 	},
-};
+}
 
-const activeProviderSlots = new Map<string, number>();
-const activeModelSlots = new Map<string, number>();
-const modelRetryCooldownUntil = new Map<string, number>();
+const activeProviderSlots = new Map<string, number>()
+const activeModelSlots = new Map<string, number>()
+const modelRetryCooldownUntil = new Map<string, number>()
 
 function getAvailableModelIds(ctx?: ExtensionContext): Set<string> {
-	const registry = ctx?.modelRegistry ?? latestUiContext?.modelRegistry;
-	const models = registry?.getAvailable?.() ?? [];
-	return new Set(models.map((model: { provider: string; id: string }) => `${model.provider}/${model.id}`));
+	const registry = ctx?.modelRegistry ?? latestUiContext?.modelRegistry
+	const models = registry?.getAvailable?.() ?? []
+	return new Set(models.map((model: { provider: string; id: string }) => `${model.provider}/${model.id}`))
 }
 
 interface RunModelPlan {
-	primaryModel?: string;
-	modelCandidates: string[];
-	thinkingLevel?: ThinkingLevel;
-	category?: string;
-	unstable: boolean;
-	missingCandidates?: string[];
+	primaryModel?: string
+	modelCandidates: string[]
+	thinkingLevel?: ThinkingLevel
+	category?: string
+	unstable: boolean
+	missingCandidates?: string[]
 }
 
 function normalizeModelId(model: string | undefined): string | undefined {
-	if (!model) return undefined;
-	const trimmed = model.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
+	if (!model) return undefined
+	const trimmed = model.trim()
+	return trimmed.length > 0 ? trimmed : undefined
 }
 
 function normalizeThinkingLevel(thinkingLevel: string | undefined): ThinkingLevel | undefined {
-	if (!thinkingLevel) return undefined;
-	const normalized = thinkingLevel.trim().toLowerCase();
-	return (THINKING_LEVELS as readonly string[]).includes(normalized) ? (normalized as ThinkingLevel) : undefined;
+	if (!thinkingLevel) return undefined
+	const normalized = thinkingLevel.trim().toLowerCase()
+	return (THINKING_LEVELS as readonly string[]).includes(normalized) ? (normalized as ThinkingLevel) : undefined
 }
 
 function canonicalizeModelBase(model: string | undefined): string | undefined {
-	const normalized = normalizeModelId(model);
-	if (!normalized) return undefined;
-	if (normalized.includes("/")) return normalized;
-	return CANONICAL_MODEL_IDS[normalized.toLowerCase()] ?? normalized;
+	const normalized = normalizeModelId(model)
+	if (!normalized) return undefined
+	if (normalized.includes("/")) return normalized
+	return CANONICAL_MODEL_IDS[normalized.toLowerCase()] ?? normalized
 }
 
 function splitModelThinking(model: string | undefined): { model?: string; thinkingLevel?: ThinkingLevel } {
-	const normalized = normalizeModelId(model);
-	if (!normalized) return {};
-	const slashIndex = normalized.indexOf("/");
-	const colonIndex = normalized.lastIndexOf(":");
+	const normalized = normalizeModelId(model)
+	if (!normalized) return {}
+	const slashIndex = normalized.indexOf("/")
+	const colonIndex = normalized.lastIndexOf(":")
 	if (colonIndex > slashIndex) {
-		const thinkingLevel = normalizeThinkingLevel(normalized.slice(colonIndex + 1));
+		const thinkingLevel = normalizeThinkingLevel(normalized.slice(colonIndex + 1))
 		if (thinkingLevel) {
-			return { model: canonicalizeModelBase(normalized.slice(0, colonIndex)), thinkingLevel };
+			return { model: canonicalizeModelBase(normalized.slice(0, colonIndex)), thinkingLevel }
 		}
 	}
-	return { model: canonicalizeModelBase(normalized) };
+	return { model: canonicalizeModelBase(normalized) }
 }
 
 function normalizeModelList(models: string[] | undefined): string[] {
-	if (!models || models.length === 0) return [];
-	const unique = new Set<string>();
+	if (!models || models.length === 0) return []
+	const unique = new Set<string>()
 	for (const model of models) {
-		const normalized = splitModelThinking(model).model;
-		if (!normalized) continue;
-		unique.add(normalized);
+		const normalized = splitModelThinking(model).model
+		if (!normalized) continue
+		unique.add(normalized)
 	}
-	return Array.from(unique);
+	return Array.from(unique)
 }
 
 function normalizeCategoryName(category: string | undefined): string | undefined {
-	if (!category) return undefined;
-	const normalized = category.trim().toLowerCase();
-	return normalized.length > 0 ? normalized : undefined;
+	if (!category) return undefined
+	const normalized = category.trim().toLowerCase()
+	return normalized.length > 0 ? normalized : undefined
 }
 
 function parseProviderFromModel(model: string | undefined): string | undefined {
-	const normalized = splitModelThinking(model).model;
-	if (!normalized) return undefined;
-	const [provider] = normalized.split("/");
-	return provider || undefined;
+	const normalized = splitModelThinking(model).model
+	if (!normalized) return undefined
+	const [provider] = normalized.split("/")
+	return provider || undefined
 }
 
 function getProviderConcurrencyLimit(provider: string | undefined): number {
-	if (!provider) return Number.POSITIVE_INFINITY;
-	return PROVIDER_CONCURRENCY_LIMITS[provider] ?? Number.POSITIVE_INFINITY;
+	if (!provider) return Number.POSITIVE_INFINITY
+	return PROVIDER_CONCURRENCY_LIMITS[provider] ?? Number.POSITIVE_INFINITY
 }
 
 function getModelConcurrencyLimit(model: string | undefined): number {
-	const normalized = splitModelThinking(model).model;
-	if (!normalized) return Number.POSITIVE_INFINITY;
-	return MODEL_CONCURRENCY_LIMITS[normalized] ?? Number.POSITIVE_INFINITY;
+	const normalized = splitModelThinking(model).model
+	if (!normalized) return Number.POSITIVE_INFINITY
+	return MODEL_CONCURRENCY_LIMITS[normalized] ?? Number.POSITIVE_INFINITY
 }
 
 function incrementCount(map: Map<string, number>, key: string | undefined) {
-	if (!key) return;
-	map.set(key, (map.get(key) ?? 0) + 1);
+	if (!key) return
+	map.set(key, (map.get(key) ?? 0) + 1)
 }
 
 function decrementCount(map: Map<string, number>, key: string | undefined) {
-	if (!key) return;
-	const next = (map.get(key) ?? 0) - 1;
-	if (next <= 0) map.delete(key);
-	else map.set(key, next);
+	if (!key) return
+	const next = (map.get(key) ?? 0) - 1
+	if (next <= 0) map.delete(key)
+	else map.set(key, next)
 }
 
 async function acquireExecutionSlot(model: string | undefined, signal: AbortSignal | undefined): Promise<() => void> {
-	const normalizedModel = normalizeModelId(model);
-	if (!normalizedModel) return () => {};
-	const provider = parseProviderFromModel(normalizedModel);
-	const providerLimit = getProviderConcurrencyLimit(provider);
-	const modelLimit = getModelConcurrencyLimit(normalizedModel);
+	const normalizedModel = normalizeModelId(model)
+	if (!normalizedModel) return () => {}
+	const provider = parseProviderFromModel(normalizedModel)
+	const providerLimit = getProviderConcurrencyLimit(provider)
+	const modelLimit = getModelConcurrencyLimit(normalizedModel)
 
 	while (true) {
-		if (signal?.aborted) throw new Error("Aborted");
-		const providerCount = provider ? (activeProviderSlots.get(provider) ?? 0) : 0;
-		const modelCount = activeModelSlots.get(normalizedModel) ?? 0;
-		const providerAvailable = providerCount < providerLimit;
-		const modelAvailable = modelCount < modelLimit;
+		if (signal?.aborted) throw new Error("Aborted")
+		const providerCount = provider ? (activeProviderSlots.get(provider) ?? 0) : 0
+		const modelCount = activeModelSlots.get(normalizedModel) ?? 0
+		const providerAvailable = providerCount < providerLimit
+		const modelAvailable = modelCount < modelLimit
 		if (providerAvailable && modelAvailable) {
-			incrementCount(activeProviderSlots, provider);
-			incrementCount(activeModelSlots, normalizedModel);
-			let released = false;
+			incrementCount(activeProviderSlots, provider)
+			incrementCount(activeModelSlots, normalizedModel)
+			let released = false
 			return () => {
-				if (released) return;
-				released = true;
-				decrementCount(activeProviderSlots, provider);
-				decrementCount(activeModelSlots, normalizedModel);
-			};
+				if (released) return
+				released = true
+				decrementCount(activeProviderSlots, provider)
+				decrementCount(activeModelSlots, normalizedModel)
+			}
 		}
-		await sleep(EXECUTION_SLOT_POLL_MS, signal);
+		await sleep(EXECUTION_SLOT_POLL_MS, signal)
 	}
 }
 
 function getCategoryRouting(category: string | undefined): CategoryRoutingConfig | undefined {
-	const key = normalizeCategoryName(category);
-	if (!key) return undefined;
-	return CATEGORY_ROUTING[key];
+	const key = normalizeCategoryName(category)
+	if (!key) return undefined
+	return CATEGORY_ROUTING[key]
 }
 
 function getAgentTypeHierarchy(agentName: string): AgentTypeModelHierarchy {
-	const type = getAgentType(agentName);
-	return AGENT_TYPE_MODEL_HIERARCHY[type] ?? AGENT_TYPE_MODEL_HIERARCHY.other;
+	const type = getAgentType(agentName)
+	return AGENT_TYPE_MODEL_HIERARCHY[type] ?? AGENT_TYPE_MODEL_HIERARCHY.other
 }
 
 function isProjectAgentTrustBypassEnabled(): boolean {
-	return process.env[PROJECT_AGENT_TRUST_ENV_KEY]?.trim() === "1";
+	return process.env[PROJECT_AGENT_TRUST_ENV_KEY]?.trim() === "1"
 }
 
 function isUnstableModel(model: string | undefined): boolean {
-	const normalized = splitModelThinking(model).model?.toLowerCase();
-	if (!normalized) return false;
-	return UNSTABLE_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
+	const normalized = splitModelThinking(model).model?.toLowerCase()
+	if (!normalized) return false
+	return UNSTABLE_MODEL_PATTERNS.some((pattern) => pattern.test(normalized))
 }
 
 function isVisualCategory(category: string | undefined): boolean {
-	const normalized = normalizeCategoryName(category);
-	if (!normalized) return false;
+	const normalized = normalizeCategoryName(category)
+	if (!normalized) return false
 	return (
 		normalized.includes("visual") ||
 		normalized.includes("artistry") ||
 		normalized.includes("design") ||
 		normalized.includes("layout") ||
 		normalized.includes("style")
-	);
+	)
 }
 
 function isUnstableCategory(category: string | undefined): boolean {
-	const config = getCategoryRouting(category);
-	if (config?.unstable) return true;
-	return isVisualCategory(category);
+	const config = getCategoryRouting(category)
+	if (config?.unstable) return true
+	return isVisualCategory(category)
 }
 
 function isRetryableFailureText(text: string): boolean {
-	return RETRYABLE_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
+	return RETRYABLE_FAILURE_PATTERNS.some((pattern) => pattern.test(text))
 }
 
 function isModelCoolingDown(model: string | undefined): boolean {
-	const normalized = splitModelThinking(model).model;
-	if (!normalized) return false;
-	const until = modelRetryCooldownUntil.get(normalized);
-	if (!until) return false;
+	const normalized = splitModelThinking(model).model
+	if (!normalized) return false
+	const until = modelRetryCooldownUntil.get(normalized)
+	if (!until) return false
 	if (until <= Date.now()) {
-		modelRetryCooldownUntil.delete(normalized);
-		return false;
+		modelRetryCooldownUntil.delete(normalized)
+		return false
 	}
-	return true;
+	return true
 }
 
 function markModelCooldown(model: string | undefined): void {
-	const normalized = splitModelThinking(model).model;
-	if (!normalized) return;
-	modelRetryCooldownUntil.set(normalized, Date.now() + MODEL_RETRY_COOLDOWN_MS);
+	const normalized = splitModelThinking(model).model
+	if (!normalized) return
+	modelRetryCooldownUntil.set(normalized, Date.now() + MODEL_RETRY_COOLDOWN_MS)
 }
 
 function resolveRunModelPlan(
@@ -412,14 +412,14 @@ function resolveRunModelPlan(
 	fallbackModels?: string[],
 	thinkingLevelOverride?: string,
 ): RunModelPlan {
-	const categoryConfig = getCategoryRouting(category);
-	const hierarchy = getAgentTypeHierarchy(agent.name);
-	const parsedModelOverride = splitModelThinking(modelOverride);
-	const parsedAgentDefault = splitModelThinking(agent.model);
-	const agentDefaultModel = parsedAgentDefault.model;
+	const categoryConfig = getCategoryRouting(category)
+	const hierarchy = getAgentTypeHierarchy(agent.name)
+	const parsedModelOverride = splitModelThinking(modelOverride)
+	const parsedAgentDefault = splitModelThinking(agent.model)
+	const agentDefaultModel = parsedAgentDefault.model
 	const categoryPrimaryModel = isVisualCategory(category)
 		? normalizeModelId(categoryConfig?.model) ?? "openai-codex/gpt-5.5"
-		: undefined;
+		: undefined
 	// Explicit tool overrides win first, and visual categories still force the visual route.
 	// Otherwise prefer the agent's own frontmatter model before generic routing so
 	// specialized agents like ds-scout keep their configured provider instead of
@@ -429,68 +429,68 @@ function resolveRunModelPlan(
 		categoryPrimaryModel ??
 		agentDefaultModel ??
 		normalizeModelId(hierarchy.primaryModel) ??
-		normalizeModelId(categoryConfig?.model);
+		normalizeModelId(categoryConfig?.model)
 
 	const mergedFallbacks = normalizeModelList([
 		...(fallbackModels ?? []),
 		...(categoryConfig?.fallbackModels ?? []),
 		...(hierarchy.fallbackModels ?? []),
 		...(agentDefaultModel ? [agentDefaultModel] : []),
-	]);
+	])
 
 	if (!primaryModel && mergedFallbacks.length > 0) {
-		primaryModel = mergedFallbacks.shift();
+		primaryModel = mergedFallbacks.shift()
 	}
 
-	const requestedCandidates = normalizeModelList([...(primaryModel ? [primaryModel] : []), ...mergedFallbacks]);
-	const missingCandidates = requestedCandidates.filter((model) => !availableModelIds.has(splitModelThinking(model).model ?? ""));
-	const modelCandidates = requestedCandidates.filter((model) => availableModelIds.has(splitModelThinking(model).model ?? ""));
+	const requestedCandidates = normalizeModelList([...(primaryModel ? [primaryModel] : []), ...mergedFallbacks])
+	const missingCandidates = requestedCandidates.filter((model) => !availableModelIds.has(splitModelThinking(model).model ?? ""))
+	const modelCandidates = requestedCandidates.filter((model) => availableModelIds.has(splitModelThinking(model).model ?? ""))
 	if (!primaryModel || !availableModelIds.has(primaryModel)) {
-		primaryModel = modelCandidates[0];
+		primaryModel = modelCandidates[0]
 	}
 	const thinkingLevel =
 		normalizeThinkingLevel(thinkingLevelOverride) ??
 		parsedModelOverride.thinkingLevel ??
 		categoryConfig?.thinkingLevel ??
 		parsedAgentDefault.thinkingLevel ??
-		hierarchy.thinkingLevel;
-	const unstable = isUnstableCategory(category) || isUnstableModel(primaryModel);
-	return { primaryModel, modelCandidates, thinkingLevel, category: normalizeCategoryName(category), unstable, missingCandidates };
+		hierarchy.thinkingLevel
+	const unstable = isUnstableCategory(category) || isUnstableModel(primaryModel)
+	return { primaryModel, modelCandidates, thinkingLevel, category: normalizeCategoryName(category), unstable, missingCandidates }
 }
 
 function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
+	if (count < 1000) return count.toString()
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`
+	if (count < 1000000) return `${Math.round(count / 1000)}k`
+	return `${(count / 1000000).toFixed(1)}M`
 }
 
 function formatUsageStats(
 	usage: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-		cost: number;
-		contextTokens?: number;
-		turns?: number;
+		input: number
+		output: number
+		cacheRead: number
+		cacheWrite: number
+		cost: number
+		contextTokens?: number
+		turns?: number
 	},
 	model?: string,
 	thinkingLevel?: ThinkingLevel,
 ): string {
-	const parts: string[] = [];
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
-	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
-	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
+	const parts: string[] = []
+	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`)
+	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`)
+	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`)
+	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`)
+	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`)
+	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`)
 	if (usage.contextTokens && usage.contextTokens > 0) {
-		parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
+		parts.push(`ctx:${formatTokens(usage.contextTokens)}`)
 	}
-	if (model) parts.push(thinkingLevel ? `${model}:${thinkingLevel}` : model);
-	else if (thinkingLevel) parts.push(`think:${thinkingLevel}`);
-	return parts.join(" ");
+	if (model) parts.push(thinkingLevel ? `${model}:${thinkingLevel}` : model)
+	else if (thinkingLevel) parts.push(`think:${thinkingLevel}`)
+	return parts.join(" ")
 }
 
 function formatToolCall(
@@ -499,329 +499,329 @@ function formatToolCall(
 	themeFg: (color: any, text: string) => string,
 ): string {
 	const shortenPath = (p: string) => {
-		const home = os.homedir();
-		return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
-	};
+		const home = os.homedir()
+		return p.startsWith(home) ? `~${p.slice(home.length)}` : p
+	}
 
 	switch (toolName) {
 		case "bash": {
-			const command = (args.command as string) || "...";
-			const preview = command.length > 60 ? `${command.slice(0, 60)}...` : command;
-			return themeFg("muted", "$ ") + themeFg("toolOutput", preview);
+			const command = (args.command as string) || "..."
+			const preview = command.length > 60 ? `${command.slice(0, 60)}...` : command
+			return themeFg("muted", "$ ") + themeFg("toolOutput", preview)
 		}
 		case "read": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			const filePath = shortenPath(rawPath);
-			const offset = args.offset as number | undefined;
-			const limit = args.limit as number | undefined;
-			let text = themeFg("accent", filePath);
+			const rawPath = (args.file_path || args.path || "...") as string
+			const filePath = shortenPath(rawPath)
+			const offset = args.offset as number | undefined
+			const limit = args.limit as number | undefined
+			let text = themeFg("accent", filePath)
 			if (offset !== undefined || limit !== undefined) {
-				const startLine = offset ?? 1;
-				const endLine = limit !== undefined ? startLine + limit - 1 : "";
-				text += themeFg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
+				const startLine = offset ?? 1
+				const endLine = limit !== undefined ? startLine + limit - 1 : ""
+				text += themeFg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`)
 			}
-			return themeFg("muted", "read ") + text;
+			return themeFg("muted", "read ") + text
 		}
 		case "write": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			const filePath = shortenPath(rawPath);
-			const content = (args.content || "") as string;
-			const lines = content.split("\n").length;
-			let text = themeFg("muted", "write ") + themeFg("accent", filePath);
-			if (lines > 1) text += themeFg("dim", ` (${lines} lines)`);
-			return text;
+			const rawPath = (args.file_path || args.path || "...") as string
+			const filePath = shortenPath(rawPath)
+			const content = (args.content || "") as string
+			const lines = content.split("\n").length
+			let text = themeFg("muted", "write ") + themeFg("accent", filePath)
+			if (lines > 1) text += themeFg("dim", ` (${lines} lines)`)
+			return text
 		}
 		case "edit": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			return themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath));
+			const rawPath = (args.file_path || args.path || "...") as string
+			return themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath))
 		}
 		case "ls": {
-			const rawPath = (args.path || ".") as string;
-			return themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath));
+			const rawPath = (args.path || ".") as string
+			return themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath))
 		}
 		case "find": {
-			const pattern = (args.pattern || "*") as string;
-			const rawPath = (args.path || ".") as string;
-			return themeFg("muted", "find ") + themeFg("accent", pattern) + themeFg("dim", ` in ${shortenPath(rawPath)}`);
+			const pattern = (args.pattern || "*") as string
+			const rawPath = (args.path || ".") as string
+			return themeFg("muted", "find ") + themeFg("accent", pattern) + themeFg("dim", ` in ${shortenPath(rawPath)}`)
 		}
 		case "grep": {
-			const pattern = (args.pattern || "") as string;
-			const rawPath = (args.path || ".") as string;
+			const pattern = (args.pattern || "") as string
+			const rawPath = (args.path || ".") as string
 			return (
 				themeFg("muted", "grep ") +
 				themeFg("accent", `/${pattern}/`) +
 				themeFg("dim", ` in ${shortenPath(rawPath)}`)
-			);
+			)
 		}
 		default: {
-			const argsStr = JSON.stringify(args);
-			const preview = argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr;
-			return themeFg("accent", toolName) + themeFg("dim", ` ${preview}`);
+			const argsStr = JSON.stringify(args)
+			const preview = argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr
+			return themeFg("accent", toolName) + themeFg("dim", ` ${preview}`)
 		}
 	}
 }
 
 export interface UsageStats {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	contextTokens: number;
-	turns: number;
+	input: number
+	output: number
+	cacheRead: number
+	cacheWrite: number
+	cost: number
+	contextTokens: number
+	turns: number
 }
 
-export type SubagentRunState = "pending" | "running" | "completed" | "failed" | "cancelled";
-type WidgetDensity = "detailed" | "compact";
-type WidgetGrouping = "job" | "agent";
-type WidgetAgentLimit = number | "all";
-type AgentType = "coordinator" | "scout" | "planner" | "worker" | "reviewer" | "verifier" | "other";
+export type SubagentRunState = "pending" | "running" | "completed" | "failed" | "cancelled"
+type WidgetDensity = "detailed" | "compact"
+type WidgetGrouping = "job" | "agent"
+type WidgetAgentLimit = number | "all"
+type AgentType = "coordinator" | "scout" | "planner" | "worker" | "reviewer" | "verifier" | "other"
 
 export interface SingleResult {
-	agent: string;
-	agentSource: "user" | "project" | "unknown";
-	task: string;
-	exitCode: number;
-	messages: Message[];
-	stderr: string;
-	usage: UsageStats;
-	model?: string;
-	thinkingLevel?: ThinkingLevel;
-	category?: string;
-	stopReason?: string;
-	errorMessage?: string;
-	step?: number;
-	runState?: SubagentRunState;
-	startedAt?: number;
-	updatedAt?: number;
-	finishedAt?: number;
-	attempts?: number;
-	retryLog?: string[];
+	agent: string
+	agentSource: "user" | "project" | "unknown"
+	task: string
+	exitCode: number
+	messages: Message[]
+	stderr: string
+	usage: UsageStats
+	model?: string
+	thinkingLevel?: ThinkingLevel
+	category?: string
+	stopReason?: string
+	errorMessage?: string
+	step?: number
+	runState?: SubagentRunState
+	startedAt?: number
+	updatedAt?: number
+	finishedAt?: number
+	attempts?: number
+	retryLog?: string[]
 }
 
 export interface SubagentDetails {
-	mode: "single" | "parallel" | "chain";
-	agentScope: AgentScope;
-	projectAgentsDir: string | null;
-	results: SingleResult[];
+	mode: "single" | "parallel" | "chain"
+	agentScope: AgentScope
+	projectAgentsDir: string | null
+	results: SingleResult[]
 }
 
-type BackgroundJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+type BackgroundJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
 
-let latestUiContext: ExtensionContext | undefined;
+let latestUiContext: ExtensionContext | undefined
 
 interface BackgroundJob {
-	id: string;
-	label?: string;
-	mode: "single" | "parallel" | "chain";
-	status: BackgroundJobStatus;
-	agentScope: AgentScope;
-	projectAgentsDir: string | null;
-	createdAt: number;
-	startedAt?: number;
-	finishedAt?: number;
-	maxConcurrency: number;
-	baseCwd: string;
+	id: string
+	label?: string
+	mode: "single" | "parallel" | "chain"
+	status: BackgroundJobStatus
+	agentScope: AgentScope
+	projectAgentsDir: string | null
+	createdAt: number
+	startedAt?: number
+	finishedAt?: number
+	maxConcurrency: number
+	baseCwd: string
 	params: {
-		agent?: string;
-		task?: string;
-		model?: string;
-		thinkingLevel?: ThinkingLevel;
-		category?: string;
-		fallbackModels?: string[];
+		agent?: string
+		task?: string
+		model?: string
+		thinkingLevel?: ThinkingLevel
+		category?: string
+		fallbackModels?: string[]
 		tasks?: Array<{
-			agent: string;
-			task: string;
-			cwd?: string;
-			model?: string;
-			thinkingLevel?: ThinkingLevel;
-			category?: string;
-			fallbackModels?: string[];
-		}>;
+			agent: string
+			task: string
+			cwd?: string
+			model?: string
+			thinkingLevel?: ThinkingLevel
+			category?: string
+			fallbackModels?: string[]
+		}>
 		chain?: Array<{
-			agent: string;
-			task: string;
-			cwd?: string;
-			model?: string;
-			thinkingLevel?: ThinkingLevel;
-			category?: string;
-			fallbackModels?: string[];
-		}>;
-		cwd?: string;
-		forceBackgroundForUnstable?: boolean;
-	};
-	details: SubagentDetails;
-	resultText?: string;
-	errorText?: string;
-	abortController?: AbortController;
+			agent: string
+			task: string
+			cwd?: string
+			model?: string
+			thinkingLevel?: ThinkingLevel
+			category?: string
+			fallbackModels?: string[]
+		}>
+		cwd?: string
+		forceBackgroundForUnstable?: boolean
+	}
+	details: SubagentDetails
+	resultText?: string
+	errorText?: string
+	abortController?: AbortController
 }
 
 export function getFinalOutput(messages: Message[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
+		const msg = messages[i]
 		if (msg.role === "assistant") {
 			const text = msg.content
 				.filter((part) => part.type === "text")
 				.map((part) => part.text)
-				.join("");
-			if (text.trim()) return text;
+				.join("")
+			if (text.trim()) return text
 		}
 	}
-	return "";
+	return ""
 }
 
-type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> };
+type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> }
 
 function getDisplayItems(messages: Message[]): DisplayItem[] {
-	const items: DisplayItem[] = [];
+	const items: DisplayItem[] = []
 	for (const msg of messages) {
 		if (msg.role === "assistant") {
 			for (const part of msg.content) {
-				if (part.type === "text") items.push({ type: "text", text: part.text });
-				else if (part.type === "toolCall") items.push({ type: "toolCall", name: part.name, args: part.arguments });
+				if (part.type === "text") items.push({ type: "text", text: part.text })
+				else if (part.type === "toolCall") items.push({ type: "toolCall", name: part.name, args: part.arguments })
 			}
 		}
 	}
-	return items;
+	return items
 }
 
 function createJobId(): string {
-	return `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+	return `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
 export function getResultRunState(result: SingleResult): SubagentRunState {
-	if (result.runState) return result.runState;
-	if (result.exitCode === -1) return "running";
-	if (result.stopReason === "aborted") return "cancelled";
-	if (result.exitCode !== 0 || result.stopReason === "error") return "failed";
-	return "completed";
+	if (result.runState) return result.runState
+	if (result.exitCode === -1) return "running"
+	if (result.stopReason === "aborted") return "cancelled"
+	if (result.exitCode !== 0 || result.stopReason === "error") return "failed"
+	return "completed"
 }
 
 function shouldRetryWithFallback(result: SingleResult): boolean {
-	const state = getResultRunState(result);
-	if (state !== "failed") return false;
-	if (result.stopReason === "aborted") return false;
-	const text = `${result.stderr}\n${result.errorMessage ?? ""}\n${result.stopReason ?? ""}\n${getFinalOutput(result.messages)}`.toLowerCase();
-	if (isRetryableFailureText(text)) return true;
-	return result.exitCode !== 0 && text.trim().length === 0;
+	const state = getResultRunState(result)
+	if (state !== "failed") return false
+	if (result.stopReason === "aborted") return false
+	const text = `${result.stderr}\n${result.errorMessage ?? ""}\n${result.stopReason ?? ""}\n${getFinalOutput(result.messages)}`.toLowerCase()
+	if (isRetryableFailureText(text)) return true
+	return result.exitCode !== 0 && text.trim().length === 0
 }
 
 function hasNonCoolingCandidate(candidates: string[], startIndex: number): boolean {
 	for (let i = startIndex; i < candidates.length; i++) {
-		if (!isModelCoolingDown(candidates[i])) return true;
+		if (!isModelCoolingDown(candidates[i])) return true
 	}
-	return false;
+	return false
 }
 
 function resultCounts(results: SingleResult[]): {
-	total: number;
-	pending: number;
-	running: number;
-	done: number;
-	completed: number;
-	failed: number;
-	cancelled: number;
+	total: number
+	pending: number
+	running: number
+	done: number
+	completed: number
+	failed: number
+	cancelled: number
 } {
-	let pending = 0;
-	let running = 0;
-	let completed = 0;
-	let failed = 0;
-	let cancelled = 0;
+	let pending = 0
+	let running = 0
+	let completed = 0
+	let failed = 0
+	let cancelled = 0
 	for (const result of results) {
 		switch (getResultRunState(result)) {
 			case "pending":
-				pending += 1;
-				break;
+				pending += 1
+				break
 			case "running":
-				running += 1;
-				break;
+				running += 1
+				break
 			case "completed":
-				completed += 1;
-				break;
+				completed += 1
+				break
 			case "failed":
-				failed += 1;
-				break;
+				failed += 1
+				break
 			case "cancelled":
-				cancelled += 1;
-				break;
+				cancelled += 1
+				break
 		}
 	}
-	const total = results.length;
-	const done = completed + failed + cancelled;
-	return { total, pending, running, done, completed, failed, cancelled };
+	const total = results.length
+	const done = completed + failed + cancelled
+	return { total, pending, running, done, completed, failed, cancelled }
 }
 
 function statusIcon(status: BackgroundJobStatus): string {
 	switch (status) {
 		case "queued":
-			return "⏸";
+			return "⏸"
 		case "running":
-			return "⏳";
+			return "⏳"
 		case "completed":
-			return "✓";
+			return "✓"
 		case "failed":
-			return "✗";
+			return "✗"
 		case "cancelled":
-			return "⊘";
+			return "⊘"
 		default:
-			return "•";
+			return "•"
 	}
 }
 
 function statusIconAnimated(status: BackgroundJobStatus, spinnerTick: number): string {
-	if (status === "running") return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length];
-	return statusIcon(status);
+	if (status === "running") return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
+	return statusIcon(status)
 }
 
 function resultStateIcon(state: SubagentRunState, spinnerTick: number): string {
 	switch (state) {
 		case "pending":
-			return "◌";
+			return "◌"
 		case "running":
-			return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length];
+			return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
 		case "completed":
-			return "✓";
+			return "✓"
 		case "failed":
-			return "✗";
+			return "✗"
 		case "cancelled":
-			return "⊘";
+			return "⊘"
 		default:
-			return "•";
+			return "•"
 	}
 }
 
 function runStateColor(state: SubagentRunState): "success" | "error" | "warning" | "muted" {
 	switch (state) {
 		case "completed":
-			return "success";
+			return "success"
 		case "failed":
-			return "error";
+			return "error"
 		case "cancelled":
-			return "warning";
+			return "warning"
 		case "running":
-			return "warning";
+			return "warning"
 		case "pending":
 		default:
-			return "muted";
+			return "muted"
 	}
 }
 
 function runStateLabel(state: SubagentRunState): string {
 	switch (state) {
 		case "completed":
-			return "done";
+			return "done"
 		case "pending":
-			return "queued";
+			return "queued"
 		default:
-			return state;
+			return state
 	}
 }
 
 function formatRouteMeta(result: SingleResult): string {
-	const parts: string[] = [];
-	if (result.category) parts.push(`cat:${result.category}`);
-	if (result.attempts && result.attempts > 1) parts.push(`attempts:${result.attempts}`);
-	return parts.join(" · ");
+	const parts: string[] = []
+	if (result.category) parts.push(`cat:${result.category}`)
+	if (result.attempts && result.attempts > 1) parts.push(`attempts:${result.attempts}`)
+	return parts.join(" · ")
 }
 
 function runStateIconThemed(
@@ -829,196 +829,196 @@ function runStateIconThemed(
 	theme: { fg: (color: any, text: string) => string },
 	offset = 0,
 ): string {
-	const tick = Math.floor(Date.now() / WIDGET_SPINNER_INTERVAL_MS) + offset;
-	return theme.fg(runStateColor(state), resultStateIcon(state, tick));
+	const tick = Math.floor(Date.now() / WIDGET_SPINNER_INTERVAL_MS) + offset
+	return theme.fg(runStateColor(state), resultStateIcon(state, tick))
 }
 
 function sortJobsForDisplay(jobs: BackgroundJob[]): BackgroundJob[] {
 	const order = (status: BackgroundJobStatus) => {
 		switch (status) {
 			case "running":
-				return 0;
+				return 0
 			case "queued":
-				return 1;
+				return 1
 			case "failed":
-				return 2;
+				return 2
 			case "completed":
-				return 3;
+				return 3
 			case "cancelled":
-				return 4;
+				return 4
 			default:
-				return 5;
+				return 5
 		}
-	};
+	}
 
 	return [...jobs].sort((a, b) => {
-		const statusDiff = order(a.status) - order(b.status);
-		if (statusDiff !== 0) return statusDiff;
-		return b.createdAt - a.createdAt;
-	});
+		const statusDiff = order(a.status) - order(b.status)
+		if (statusDiff !== 0) return statusDiff
+		return b.createdAt - a.createdAt
+	})
 }
 
 function formatDuration(ms: number): string {
-	const seconds = Math.max(0, Math.floor(ms / 1000));
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	if (minutes < 60) return `${minutes}m${remainingSeconds.toString().padStart(2, "0")}s`;
-	const hours = Math.floor(minutes / 60);
-	const remainingMinutes = minutes % 60;
-	return `${hours}h${remainingMinutes.toString().padStart(2, "0")}m`;
+	const seconds = Math.max(0, Math.floor(ms / 1000))
+	if (seconds < 60) return `${seconds}s`
+	const minutes = Math.floor(seconds / 60)
+	const remainingSeconds = seconds % 60
+	if (minutes < 60) return `${minutes}m${remainingSeconds.toString().padStart(2, "0")}s`
+	const hours = Math.floor(minutes / 60)
+	const remainingMinutes = minutes % 60
+	return `${hours}h${remainingMinutes.toString().padStart(2, "0")}m`
 }
 
 function getTaskPreviewHint(preview: ReturnType<typeof getTaskPreview>): string | undefined {
-	if (!preview.canToggle) return undefined;
+	if (!preview.canToggle) return undefined
 	return preview.truncated
 		? `(${TASK_PREVIEW_SHORTCUT_LABEL} for full task text)`
-		: `(${TASK_PREVIEW_SHORTCUT_LABEL} to collapse task text)`;
+		: `(${TASK_PREVIEW_SHORTCUT_LABEL} to collapse task text)`
 }
 
 function formatTaskPreviewBlock(task: string, theme: any): string {
-	const preview = getTaskPreview(task);
-	let text = preview.lines.map((line) => theme.fg("dim", line)).join("\n");
-	const hint = getTaskPreviewHint(preview);
-	if (hint) text += `\n${theme.fg("muted", hint)}`;
-	return text;
+	const preview = getTaskPreview(task)
+	let text = preview.lines.map((line) => theme.fg("dim", line)).join("\n")
+	const hint = getTaskPreviewHint(preview)
+	if (hint) text += `\n${theme.fg("muted", hint)}`
+	return text
 }
 
 function formatTaskPreviewInline(task: string, theme: any, label = "Task"): string {
-	const preview = getTaskPreview(task);
-	const [firstLine = "(empty)", ...rest] = preview.lines;
-	const indent = " ".repeat(label.length + 2);
-	let text = theme.fg("muted", `${label}: `) + theme.fg("dim", firstLine);
+	const preview = getTaskPreview(task)
+	const [firstLine = "(empty)", ...rest] = preview.lines
+	const indent = " ".repeat(label.length + 2)
+	let text = theme.fg("muted", `${label}: `) + theme.fg("dim", firstLine)
 	for (const line of rest) {
-		text += `\n${theme.fg("muted", indent)}${theme.fg("dim", line)}`;
+		text += `\n${theme.fg("muted", indent)}${theme.fg("dim", line)}`
 	}
-	return text;
+	return text
 }
 
 function shortJobId(jobId: string): string {
-	if (jobId.length <= 18) return jobId;
-	return `${jobId.slice(0, 10)}…${jobId.slice(-4)}`;
+	if (jobId.length <= 18) return jobId
+	return `${jobId.slice(0, 10)}…${jobId.slice(-4)}`
 }
 
 function previewTask(task: string, maxLength = 44): string {
-	const singleLine = task.replace(/\s+/g, " ").trim();
-	if (singleLine.length <= maxLength) return singleLine;
-	return `${singleLine.slice(0, Math.max(0, maxLength - 1))}…`;
+	const singleLine = task.replace(/\s+/g, " ").trim()
+	if (singleLine.length <= maxLength) return singleLine
+	return `${singleLine.slice(0, Math.max(0, maxLength - 1))}…`
 }
 
 function renderMiniProgressBar(done: number, total: number, width = 8): string {
-	if (total <= 0) return "░".repeat(width);
-	const ratio = Math.max(0, Math.min(1, done / total));
-	const filled = Math.round(ratio * width);
-	return `${"█".repeat(filled)}${"░".repeat(Math.max(0, width - filled))}`;
+	if (total <= 0) return "░".repeat(width)
+	const ratio = Math.max(0, Math.min(1, done / total))
+	const filled = Math.round(ratio * width)
+	return `${"█".repeat(filled)}${"░".repeat(Math.max(0, width - filled))}`
 }
 
 function getAgentType(agentName: string): AgentType {
-	const name = agentName.toLowerCase();
-	if (name.includes("coordinator")) return "coordinator";
-	if (name.includes("scout")) return "scout";
-	if (name.includes("planner")) return "planner";
-	if (name.includes("worker")) return "worker";
-	if (name.includes("reviewer")) return "reviewer";
-	if (name.includes("verifier")) return "verifier";
-	return "other";
+	const name = agentName.toLowerCase()
+	if (name.includes("coordinator")) return "coordinator"
+	if (name.includes("scout")) return "scout"
+	if (name.includes("planner")) return "planner"
+	if (name.includes("worker")) return "worker"
+	if (name.includes("reviewer")) return "reviewer"
+	if (name.includes("verifier")) return "verifier"
+	return "other"
 }
 
 function getAgentTypeLabel(agentName: string): string {
 	switch (getAgentType(agentName)) {
 		case "coordinator":
-			return "Coordinator";
+			return "Coordinator"
 		case "scout":
-			return "Scout";
+			return "Scout"
 		case "planner":
-			return "Planner";
+			return "Planner"
 		case "worker":
-			return "Worker";
+			return "Worker"
 		case "reviewer":
-			return "Reviewer";
+			return "Reviewer"
 		case "verifier":
-			return "Verifier";
+			return "Verifier"
 		default:
-			return "Agent";
+			return "Agent"
 	}
 }
 
 function getAgentTypeColor(agentName: string): "accent" | "success" | "warning" | "error" | "toolTitle" {
 	switch (getAgentType(agentName)) {
 		case "coordinator":
-			return "warning";
+			return "warning"
 		case "scout":
-			return "accent";
+			return "accent"
 		case "planner":
-			return "toolTitle";
+			return "toolTitle"
 		case "worker":
-			return "success";
+			return "success"
 		case "reviewer":
-			return "error";
+			return "error"
 		case "verifier":
-			return "warning";
+			return "warning"
 		default:
-			return "accent";
+			return "accent"
 	}
 }
 
 function getAgentTypeIconByType(type: AgentType): string {
 	switch (type) {
 		case "coordinator":
-			return "◉";
+			return "◉"
 		case "scout":
-			return "◌";
+			return "◌"
 		case "planner":
-			return "✦";
+			return "✦"
 		case "worker":
-			return "◆";
+			return "◆"
 		case "reviewer":
-			return "▣";
+			return "▣"
 		case "verifier":
-			return "✓";
+			return "✓"
 		default:
-			return "•";
+			return "•"
 	}
 }
 
 function getAgentTypeIcon(agentName: string): string {
-	return getAgentTypeIconByType(getAgentType(agentName));
+	return getAgentTypeIconByType(getAgentType(agentName))
 }
 
 function runStateDetailHint(state: SubagentRunState): string {
 	switch (state) {
 		case "running":
-			return "working…";
+			return "working…"
 		case "pending":
-			return "waiting in queue…";
+			return "waiting in queue…"
 		case "completed":
-			return "completed";
+			return "completed"
 		case "failed":
-			return "failed";
+			return "failed"
 		case "cancelled":
-			return "cancelled";
+			return "cancelled"
 		default:
-			return state;
+			return state
 	}
 }
 
 function formatAgentTabLabel(_agentName: string, instanceName: string): string {
-	return instanceName;
+	return instanceName
 }
 
 function withAgentInstanceNames(results: SingleResult[]): string[] {
-	const totals = new Map<string, number>();
+	const totals = new Map<string, number>()
 	for (const result of results) {
-		totals.set(result.agent, (totals.get(result.agent) ?? 0) + 1);
+		totals.set(result.agent, (totals.get(result.agent) ?? 0) + 1)
 	}
 
-	const seen = new Map<string, number>();
+	const seen = new Map<string, number>()
 	return results.map((result) => {
-		const count = (seen.get(result.agent) ?? 0) + 1;
-		seen.set(result.agent, count);
-		const total = totals.get(result.agent) ?? 1;
-		return total > 1 ? `${result.agent}${count}` : result.agent;
-	});
+		const count = (seen.get(result.agent) ?? 0) + 1
+		seen.set(result.agent, count)
+		const total = totals.get(result.agent) ?? 1
+		return total > 1 ? `${result.agent}${count}` : result.agent
+	})
 }
 
 function makeSubagentDetails(
@@ -1027,7 +1027,7 @@ function makeSubagentDetails(
 	projectAgentsDir: string | null,
 	results: SingleResult[],
 ): SubagentDetails {
-	return { mode, agentScope, projectAgentsDir, results };
+	return { mode, agentScope, projectAgentsDir, results }
 }
 
 function makePlaceholderResult(
@@ -1037,7 +1037,7 @@ function makePlaceholderResult(
 	step?: number,
 	category?: string,
 ): SingleResult {
-	const now = Date.now();
+	const now = Date.now()
 	return {
 		agent,
 		agentSource,
@@ -1050,19 +1050,19 @@ function makePlaceholderResult(
 		category,
 		runState: "pending",
 		updatedAt: now,
-	};
+	}
 }
 
 function summarizeJobLine(job: BackgroundJob): string {
-	const counts = resultCounts(job.details.results);
-	const progress = counts.total > 0 ? `${counts.done}/${counts.total}` : "0/0";
-	const label = job.label ? ` ${job.label}` : "";
-	const parts = [`${job.mode}`, `${progress} done`];
-	if (counts.running > 0) parts.push(`${counts.running} running`);
-	if (counts.pending > 0) parts.push(`${counts.pending} queued`);
-	if (counts.failed > 0) parts.push(`${counts.failed} failed`);
-	if (job.status === "cancelled") parts.push("cancelled");
-	return `${statusIcon(job.status)} ${job.id}${label} (${parts.join(", ")})`;
+	const counts = resultCounts(job.details.results)
+	const progress = counts.total > 0 ? `${counts.done}/${counts.total}` : "0/0"
+	const label = job.label ? ` ${job.label}` : ""
+	const parts = [`${job.mode}`, `${progress} done`]
+	if (counts.running > 0) parts.push(`${counts.running} running`)
+	if (counts.pending > 0) parts.push(`${counts.pending} queued`)
+	if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+	if (job.status === "cancelled") parts.push("cancelled")
+	return `${statusIcon(job.status)} ${job.id}${label} (${parts.join(", ")})`
 }
 
 function buildWidgetHeader(
@@ -1072,17 +1072,17 @@ function buildWidgetHeader(
 	grouping: WidgetGrouping,
 	density: WidgetDensity,
 ): string {
-	const running = jobs.filter((j) => j.status === "running").length;
-	const queued = jobs.filter((j) => j.status === "queued").length;
-	const failed = jobs.filter((j) => j.status === "failed").length;
+	const running = jobs.filter((j) => j.status === "running").length
+	const queued = jobs.filter((j) => j.status === "queued").length
+	const failed = jobs.filter((j) => j.status === "failed").length
 	const headerIcon =
 		running > 0
 			? theme.fg("warning", SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length])
 			: failed > 0
 				? theme.fg("warning", "◐")
-				: theme.fg("success", "✓");
-	const groupingLabel = grouping === "agent" ? "by agent type" : "by job";
-	const densityLabel = density === "compact" ? "compact" : "detailed";
+				: theme.fg("success", "✓")
+	const groupingLabel = grouping === "agent" ? "by agent type" : "by job"
+	const densityLabel = density === "compact" ? "compact" : "detailed"
 	return (
 		headerIcon +
 		" " +
@@ -1090,37 +1090,37 @@ function buildWidgetHeader(
 		" " +
 		theme.fg("dim", `${running} running · ${queued} queued${failed > 0 ? ` · ${failed} failed` : ""}`) +
 		theme.fg("muted", ` · ${groupingLabel} · ${densityLabel}`)
-	);
+	)
 }
 
 function summarizeAgentTypesInJob(job: BackgroundJob): string {
-	const byType = new Map<AgentType, number>();
+	const byType = new Map<AgentType, number>()
 	for (const result of job.details.results) {
-		const type = getAgentType(result.agent);
-		byType.set(type, (byType.get(type) ?? 0) + 1);
+		const type = getAgentType(result.agent)
+		byType.set(type, (byType.get(type) ?? 0) + 1)
 	}
-	const entries = Array.from(byType.entries()).sort((a, b) => b[1] - a[1]);
-	if (entries.length === 0) return "";
-	return entries.map(([type, count]) => `${getAgentTypeLabel(type)}×${count}`).join(" · ");
+	const entries = Array.from(byType.entries()).sort((a, b) => b[1] - a[1])
+	if (entries.length === 0) return ""
+	return entries.map(([type, count]) => `${getAgentTypeLabel(type)}×${count}`).join(" · ")
 }
 
 function takeWithAgentLimit<T>(items: T[], limit: WidgetAgentLimit): T[] {
-	return limit === "all" ? items : items.slice(0, limit);
+	return limit === "all" ? items : items.slice(0, limit)
 }
 
 function formatWidgetAgentLimit(limit: WidgetAgentLimit): string {
-	return limit === "all" ? "all" : String(limit);
+	return limit === "all" ? "all" : String(limit)
 }
 
 function parseWidgetAgentLimit(value: unknown): WidgetAgentLimit | undefined {
-	if (value === undefined || value === null) return undefined;
-	if (value === "all") return "all";
-	if (value === "default") return DEFAULT_WIDGET_AGENT_LIMIT;
+	if (value === undefined || value === null) return undefined
+	if (value === "all") return "all"
+	if (value === "default") return DEFAULT_WIDGET_AGENT_LIMIT
 	if (typeof value === "number" && Number.isFinite(value)) {
-		const count = Math.floor(value);
-		if (count >= 1) return Math.min(count, MAX_WIDGET_AGENT_LIMIT);
+		const count = Math.floor(value)
+		if (count >= 1) return Math.min(count, MAX_WIDGET_AGENT_LIMIT)
 	}
-	return undefined;
+	return undefined
 }
 
 function renderBackgroundWidgetByJobText(
@@ -1130,23 +1130,23 @@ function renderBackgroundWidgetByJobText(
 	density: WidgetDensity,
 	agentLimit: WidgetAgentLimit,
 ): string {
-	const sorted = sortJobsForDisplay(jobs);
-	const shownJobs = sorted.slice(0, MAX_WIDGET_JOBS);
-	const lines: string[] = [];
+	const sorted = sortJobsForDisplay(jobs)
+	const shownJobs = sorted.slice(0, MAX_WIDGET_JOBS)
+	const lines: string[] = []
 
 	for (let jobIndex = 0; jobIndex < shownJobs.length; jobIndex++) {
-		const job = shownJobs[jobIndex];
-		const counts = resultCounts(job.details.results);
-		const isLastJob = jobIndex === shownJobs.length - 1;
-		const jobBranch = isLastJob ? "└─" : "├─";
-		const elapsed = formatDuration((job.finishedAt ?? Date.now()) - (job.startedAt ?? job.createdAt));
-		const progress = `${counts.done}/${counts.total}`;
-		const progressBar = renderMiniProgressBar(counts.done, counts.total);
-		const label = job.label?.trim() ? ` “${job.label.trim()}”` : "";
-		const metaParts = [progress, progressBar, elapsed];
-		if (counts.running > 0) metaParts.push(`${counts.running} running`);
-		if (counts.pending > 0) metaParts.push(`${counts.pending} queued`);
-		if (counts.failed > 0) metaParts.push(`${counts.failed} failed`);
+		const job = shownJobs[jobIndex]
+		const counts = resultCounts(job.details.results)
+		const isLastJob = jobIndex === shownJobs.length - 1
+		const jobBranch = isLastJob ? "└─" : "├─"
+		const elapsed = formatDuration((job.finishedAt ?? Date.now()) - (job.startedAt ?? job.createdAt))
+		const progress = `${counts.done}/${counts.total}`
+		const progressBar = renderMiniProgressBar(counts.done, counts.total)
+		const label = job.label?.trim() ? ` “${job.label.trim()}”` : ""
+		const metaParts = [progress, progressBar, elapsed]
+		if (counts.running > 0) metaParts.push(`${counts.running} running`)
+		if (counts.pending > 0) metaParts.push(`${counts.pending} queued`)
+		if (counts.failed > 0) metaParts.push(`${counts.failed} failed`)
 
 		const jobStateColor =
 			job.status === "failed"
@@ -1155,7 +1155,7 @@ function renderBackgroundWidgetByJobText(
 					? "success"
 					: job.status === "cancelled"
 						? "warning"
-						: "accent";
+						: "accent"
 
 		lines.push(
 			theme.fg("muted", jobBranch) +
@@ -1168,28 +1168,28 @@ function renderBackgroundWidgetByJobText(
 				theme.fg("accent", `[${job.mode}]`) +
 				" " +
 				theme.fg("dim", metaParts.join(" · ")),
-		);
+		)
 
 		if (density === "compact") {
-			const typeSummary = summarizeAgentTypesInJob(job);
+			const typeSummary = summarizeAgentTypesInJob(job)
 			if (typeSummary) {
-				const branchPrefix = isLastJob ? "   " : "│  ";
-				lines.push(theme.fg("muted", `${branchPrefix}└─ active: ${typeSummary}`));
+				const branchPrefix = isLastJob ? "   " : "│  "
+				lines.push(theme.fg("muted", `${branchPrefix}└─ active: ${typeSummary}`))
 			}
-			continue;
+			continue
 		}
 
-		const agentNames = withAgentInstanceNames(job.details.results);
-		const shownAgents = takeWithAgentLimit(job.details.results, agentLimit);
+		const agentNames = withAgentInstanceNames(job.details.results)
+		const shownAgents = takeWithAgentLimit(job.details.results, agentLimit)
 		for (let i = 0; i < shownAgents.length; i++) {
-			const result = shownAgents[i];
-			const runState = getResultRunState(result);
-			const isLastShownAgent = i === shownAgents.length - 1;
-			const isTruncated = job.details.results.length > shownAgents.length;
-			const branchPrefix = isLastJob ? "   " : "│  ";
-			const agentBranch = !isTruncated && isLastShownAgent ? "└─" : "├─";
-			const detailPrefix = `${branchPrefix}${agentBranch === "└─" ? "   " : "│  "}`;
-			const icon = resultStateIcon(runState, spinnerTick + i + jobIndex);
+			const result = shownAgents[i]
+			const runState = getResultRunState(result)
+			const isLastShownAgent = i === shownAgents.length - 1
+			const isTruncated = job.details.results.length > shownAgents.length
+			const branchPrefix = isLastJob ? "   " : "│  "
+			const agentBranch = !isTruncated && isLastShownAgent ? "└─" : "├─"
+			const detailPrefix = `${branchPrefix}${agentBranch === "└─" ? "   " : "│  "}`
+			const icon = resultStateIcon(runState, spinnerTick + i + jobIndex)
 			const stateColor =
 				runState === "completed"
 					? "success"
@@ -1199,16 +1199,16 @@ function renderBackgroundWidgetByJobText(
 							? "warning"
 							: runState === "cancelled"
 								? "warning"
-								: "muted";
+								: "muted"
 
-			const elapsedMs = result.startedAt ? (result.finishedAt ?? Date.now()) - result.startedAt : 0;
-			const elapsedText = result.startedAt ? formatDuration(elapsedMs) : undefined;
-			const stateText = runStateLabel(runState);
-			const taskText = previewTask(result.task, 52);
-			const detailText = taskText || runStateDetailHint(runState);
-			const agentLabel = formatAgentTabLabel(result.agent, agentNames[i]);
-			const agentColor = getAgentTypeColor(result.agent);
-			const agentIcon = getAgentTypeIcon(result.agent);
+			const elapsedMs = result.startedAt ? (result.finishedAt ?? Date.now()) - result.startedAt : 0
+			const elapsedText = result.startedAt ? formatDuration(elapsedMs) : undefined
+			const stateText = runStateLabel(runState)
+			const taskText = previewTask(result.task, 52)
+			const detailText = taskText || runStateDetailHint(runState)
+			const agentLabel = formatAgentTabLabel(result.agent, agentNames[i])
+			const agentColor = getAgentTypeColor(result.agent)
+			const agentIcon = getAgentTypeIcon(result.agent)
 
 			lines.push(
 				theme.fg("muted", `${branchPrefix}${agentBranch}`) +
@@ -1219,25 +1219,25 @@ function renderBackgroundWidgetByJobText(
 					" " +
 					theme.fg(stateColor, `[${stateText}]`) +
 					(elapsedText ? theme.fg("dim", ` · ${elapsedText}`) : ""),
-			);
-			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText));
+			)
+			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText))
 			if (result.retryLog && result.retryLog.length > 0) {
-				const retryText = previewTask(result.retryLog[result.retryLog.length - 1], 58);
-				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText));
+				const retryText = previewTask(result.retryLog[result.retryLog.length - 1], 58)
+				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText))
 			}
 		}
 
-		const extraAgents = job.details.results.length - shownAgents.length;
+		const extraAgents = job.details.results.length - shownAgents.length
 		if (extraAgents > 0) {
-			const branchPrefix = isLastJob ? "   " : "│  ";
-			lines.push(theme.fg("muted", `${branchPrefix}└─ … +${extraAgents} more agents`));
+			const branchPrefix = isLastJob ? "   " : "│  "
+			lines.push(theme.fg("muted", `${branchPrefix}└─ … +${extraAgents} more agents`))
 		}
 	}
 
 	if (sorted.length > MAX_WIDGET_JOBS) {
-		lines.push(theme.fg("muted", `… +${sorted.length - MAX_WIDGET_JOBS} more jobs`));
+		lines.push(theme.fg("muted", `… +${sorted.length - MAX_WIDGET_JOBS} more jobs`))
 	}
-	return lines.join("\n");
+	return lines.join("\n")
 }
 
 function renderBackgroundWidgetByAgentTypeText(
@@ -1250,20 +1250,20 @@ function renderBackgroundWidgetByAgentTypeText(
 	const typeGroups = new Map<
 		AgentType,
 		{
-			type: AgentType;
-			color: "accent" | "success" | "warning" | "error" | "toolTitle";
-			label: string;
-			items: Array<{ job: BackgroundJob; result: SingleResult; instanceName: string }>;
-			counts: ReturnType<typeof resultCounts>;
+			type: AgentType
+			color: "accent" | "success" | "warning" | "error" | "toolTitle"
+			label: string
+			items: Array<{ job: BackgroundJob; result: SingleResult; instanceName: string }>
+			counts: ReturnType<typeof resultCounts>
 		}
-	>();
+	>()
 
-	const sortedJobs = sortJobsForDisplay(jobs);
+	const sortedJobs = sortJobsForDisplay(jobs)
 	for (const job of sortedJobs) {
-		const names = withAgentInstanceNames(job.details.results);
+		const names = withAgentInstanceNames(job.details.results)
 		for (let i = 0; i < job.details.results.length; i++) {
-			const result = job.details.results[i];
-			const type = getAgentType(result.agent);
+			const result = job.details.results[i]
+			const type = getAgentType(result.agent)
 			if (!typeGroups.has(type)) {
 				typeGroups.set(type, {
 					type,
@@ -1271,33 +1271,33 @@ function renderBackgroundWidgetByAgentTypeText(
 					label: getAgentTypeLabel(type),
 					items: [],
 					counts: { total: 0, pending: 0, running: 0, done: 0, completed: 0, failed: 0, cancelled: 0 },
-				});
+				})
 			}
-			const group = typeGroups.get(type)!;
-			group.items.push({ job, result, instanceName: names[i] });
+			const group = typeGroups.get(type)!
+			group.items.push({ job, result, instanceName: names[i] })
 		}
 	}
 
 	for (const group of typeGroups.values()) {
-		group.counts = resultCounts(group.items.map((item) => item.result));
+		group.counts = resultCounts(group.items.map((item) => item.result))
 	}
 
 	const sortedGroups = Array.from(typeGroups.values()).sort((a, b) => {
-		if (b.counts.running !== a.counts.running) return b.counts.running - a.counts.running;
-		if (b.counts.pending !== a.counts.pending) return b.counts.pending - a.counts.pending;
-		if (b.counts.total !== a.counts.total) return b.counts.total - a.counts.total;
-		return a.label.localeCompare(b.label);
-	});
+		if (b.counts.running !== a.counts.running) return b.counts.running - a.counts.running
+		if (b.counts.pending !== a.counts.pending) return b.counts.pending - a.counts.pending
+		if (b.counts.total !== a.counts.total) return b.counts.total - a.counts.total
+		return a.label.localeCompare(b.label)
+	})
 
-	const lines: string[] = [];
+	const lines: string[] = []
 	if (sortedGroups.length > 0 && density === "detailed") {
-		lines.push(theme.fg("toolTitle", `● ${theme.bold("Agents")}`));
+		lines.push(theme.fg("toolTitle", `● ${theme.bold("Agents")}`))
 	}
-	const shownGroups = sortedGroups.slice(0, MAX_WIDGET_TYPE_LINES);
+	const shownGroups = sortedGroups.slice(0, MAX_WIDGET_TYPE_LINES)
 	for (let groupIndex = 0; groupIndex < shownGroups.length; groupIndex++) {
-		const group = shownGroups[groupIndex];
-		const isLastGroup = groupIndex === shownGroups.length - 1;
-		const branch = isLastGroup ? "└─" : "├─";
+		const group = shownGroups[groupIndex]
+		const isLastGroup = groupIndex === shownGroups.length - 1
+		const branch = isLastGroup ? "└─" : "├─"
 		const icon =
 			group.counts.running > 0
 				? SPINNER_FRAMES[(spinnerTick + groupIndex) % SPINNER_FRAMES.length]
@@ -1307,7 +1307,7 @@ function renderBackgroundWidgetByAgentTypeText(
 						? "⊘"
 						: group.counts.pending > 0
 							? "◌"
-							: "✓";
+							: "✓"
 		const iconColor =
 			group.counts.running > 0
 				? "warning"
@@ -1317,13 +1317,13 @@ function renderBackgroundWidgetByAgentTypeText(
 						? "warning"
 						: group.counts.pending > 0
 							? "muted"
-							: "success";
+							: "success"
 
-		const metaParts = [`${group.counts.done}/${group.counts.total} done`];
-		if (group.counts.running > 0) metaParts.push(`${group.counts.running} running`);
-		if (group.counts.pending > 0) metaParts.push(`${group.counts.pending} queued`);
-		if (group.counts.failed > 0) metaParts.push(`${group.counts.failed} failed`);
-		const groupTypeIcon = getAgentTypeIconByType(group.type);
+		const metaParts = [`${group.counts.done}/${group.counts.total} done`]
+		if (group.counts.running > 0) metaParts.push(`${group.counts.running} running`)
+		if (group.counts.pending > 0) metaParts.push(`${group.counts.pending} queued`)
+		if (group.counts.failed > 0) metaParts.push(`${group.counts.failed} failed`)
+		const groupTypeIcon = getAgentTypeIconByType(group.type)
 
 		lines.push(
 			theme.fg("muted", branch) +
@@ -1333,15 +1333,15 @@ function renderBackgroundWidgetByAgentTypeText(
 				theme.fg(group.color, `${groupTypeIcon} ${group.label}`) +
 				" " +
 				theme.fg("dim", metaParts.join(" · ")),
-		);
+		)
 
-		if (density === "compact") continue;
+		if (density === "compact") continue
 
-		const shownItems = takeWithAgentLimit(group.items, agentLimit);
+		const shownItems = takeWithAgentLimit(group.items, agentLimit)
 		for (let i = 0; i < shownItems.length; i++) {
-			const item = shownItems[i];
-			const runState = getResultRunState(item.result);
-			const itemStateIcon = resultStateIcon(runState, spinnerTick + groupIndex + i);
+			const item = shownItems[i]
+			const runState = getResultRunState(item.result)
+			const itemStateIcon = resultStateIcon(runState, spinnerTick + groupIndex + i)
 			const stateColor =
 				runState === "completed"
 					? "success"
@@ -1351,19 +1351,19 @@ function renderBackgroundWidgetByAgentTypeText(
 							? "warning"
 							: runState === "cancelled"
 								? "warning"
-								: "muted";
-			const stateText = runStateLabel(runState);
+								: "muted"
+			const stateText = runStateLabel(runState)
 			const elapsed = item.result.startedAt
 				? formatDuration((item.result.finishedAt ?? Date.now()) - item.result.startedAt)
-				: undefined;
-			const taskText = previewTask(item.result.task, 40);
-			const detailText = taskText || runStateDetailHint(runState);
-			const agentLabel = formatAgentTabLabel(item.result.agent, item.instanceName);
-			const agentIcon = getAgentTypeIcon(item.result.agent);
-			const prefix = isLastGroup ? "   " : "│  ";
-			const isLastItem = i === shownItems.length - 1 && group.items.length <= shownItems.length;
-			const itemBranch = isLastItem ? "└─" : "├─";
-			const detailPrefix = `${prefix}${itemBranch === "└─" ? "   " : "│  "}`;
+				: undefined
+			const taskText = previewTask(item.result.task, 40)
+			const detailText = taskText || runStateDetailHint(runState)
+			const agentLabel = formatAgentTabLabel(item.result.agent, item.instanceName)
+			const agentIcon = getAgentTypeIcon(item.result.agent)
+			const prefix = isLastGroup ? "   " : "│  "
+			const isLastItem = i === shownItems.length - 1 && group.items.length <= shownItems.length
+			const itemBranch = isLastItem ? "└─" : "├─"
+			const detailPrefix = `${prefix}${itemBranch === "└─" ? "   " : "│  "}`
 
 			lines.push(
 				theme.fg("muted", `${prefix}${itemBranch}`) +
@@ -1374,25 +1374,25 @@ function renderBackgroundWidgetByAgentTypeText(
 					" " +
 					theme.fg(stateColor, `[${stateText}]`) +
 					theme.fg("dim", ` · ${shortJobId(item.job.id)}${elapsed ? ` · ${elapsed}` : ""}`),
-			);
-			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText));
+			)
+			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText))
 			if (item.result.retryLog && item.result.retryLog.length > 0) {
-				const retryText = previewTask(item.result.retryLog[item.result.retryLog.length - 1], 56);
-				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText));
+				const retryText = previewTask(item.result.retryLog[item.result.retryLog.length - 1], 56)
+				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText))
 			}
 		}
 
-		const extraItems = group.items.length - shownItems.length;
+		const extraItems = group.items.length - shownItems.length
 		if (extraItems > 0) {
-			const prefix = isLastGroup ? "   " : "│  ";
-			lines.push(theme.fg("muted", `${prefix}└─ … +${extraItems} more ${group.label.toLowerCase()} agents`));
+			const prefix = isLastGroup ? "   " : "│  "
+			lines.push(theme.fg("muted", `${prefix}└─ … +${extraItems} more ${group.label.toLowerCase()} agents`))
 		}
 	}
 
 	if (sortedGroups.length > MAX_WIDGET_TYPE_LINES) {
-		lines.push(theme.fg("muted", `… +${sortedGroups.length - MAX_WIDGET_TYPE_LINES} more agent types`));
+		lines.push(theme.fg("muted", `… +${sortedGroups.length - MAX_WIDGET_TYPE_LINES} more agent types`))
 	}
-	return lines.join("\n");
+	return lines.join("\n")
 }
 
 function renderBackgroundWidgetText(
@@ -1403,85 +1403,85 @@ function renderBackgroundWidgetText(
 	grouping: WidgetGrouping,
 	agentLimit: WidgetAgentLimit,
 ): string {
-	if (jobs.length === 0) return "";
-	const lines = [buildWidgetHeader(jobs, theme, spinnerTick, grouping, density)];
+	if (jobs.length === 0) return ""
+	const lines = [buildWidgetHeader(jobs, theme, spinnerTick, grouping, density)]
 	if (grouping === "agent") {
-		const body = renderBackgroundWidgetByAgentTypeText(jobs, theme, spinnerTick, density, agentLimit);
-		if (body) lines.push(body);
-		return lines.join("\n");
+		const body = renderBackgroundWidgetByAgentTypeText(jobs, theme, spinnerTick, density, agentLimit)
+		if (body) lines.push(body)
+		return lines.join("\n")
 	}
-	const body = renderBackgroundWidgetByJobText(jobs, theme, spinnerTick, density, agentLimit);
-	if (body) lines.push(body);
-	return lines.join("\n");
+	const body = renderBackgroundWidgetByJobText(jobs, theme, spinnerTick, density, agentLimit)
+	if (body) lines.push(body)
+	return lines.join("\n")
 }
 
 function renderJobsText(jobs: BackgroundJob[]): string {
-	if (jobs.length === 0) return "No background subagent jobs.";
-	const sorted = [...jobs].sort((a, b) => b.createdAt - a.createdAt);
-	const lines = ["Background subagent jobs:"];
+	if (jobs.length === 0) return "No background subagent jobs."
+	const sorted = [...jobs].sort((a, b) => b.createdAt - a.createdAt)
+	const lines = ["Background subagent jobs:"]
 	for (const job of sorted) {
-		lines.push(`- ${summarizeJobLine(job)}`);
+		lines.push(`- ${summarizeJobLine(job)}`)
 	}
-	return lines.join("\n");
+	return lines.join("\n")
 }
 
 function renderJobResult(job: BackgroundJob): string {
-	const lines: string[] = [];
-	lines.push(`${summarizeJobLine(job)}`);
+	const lines: string[] = []
+	lines.push(`${summarizeJobLine(job)}`)
 
-	const namedAgents = withAgentInstanceNames(job.details.results);
+	const namedAgents = withAgentInstanceNames(job.details.results)
 	if (namedAgents.length > 0) {
-		lines.push("Agents:");
+		lines.push("Agents:")
 		for (let i = 0; i < job.details.results.length; i++) {
-			const result = job.details.results[i];
-			const state = getResultRunState(result);
-			const elapsed = result.startedAt ? formatDuration((result.finishedAt ?? Date.now()) - result.startedAt) : undefined;
-			const elapsedText = elapsed ? ` (${elapsed})` : "";
-			const label = formatAgentTabLabel(result.agent, namedAgents[i]);
-			const metaParts: string[] = [];
-			if (result.model) metaParts.push(`model:${result.model}${result.thinkingLevel ? `:${result.thinkingLevel}` : ""}`);
-			else if (result.thinkingLevel) metaParts.push(`thinking:${result.thinkingLevel}`);
-			const routeMeta = formatRouteMeta(result);
-			if (routeMeta) metaParts.push(routeMeta);
-			const metaText = metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : "";
-			lines.push(`- ${resultStateIcon(state, 0)} ${label}: ${state}${elapsedText}${metaText}`);
+			const result = job.details.results[i]
+			const state = getResultRunState(result)
+			const elapsed = result.startedAt ? formatDuration((result.finishedAt ?? Date.now()) - result.startedAt) : undefined
+			const elapsedText = elapsed ? ` (${elapsed})` : ""
+			const label = formatAgentTabLabel(result.agent, namedAgents[i])
+			const metaParts: string[] = []
+			if (result.model) metaParts.push(`model:${result.model}${result.thinkingLevel ? `:${result.thinkingLevel}` : ""}`)
+			else if (result.thinkingLevel) metaParts.push(`thinking:${result.thinkingLevel}`)
+			const routeMeta = formatRouteMeta(result)
+			if (routeMeta) metaParts.push(routeMeta)
+			const metaText = metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : ""
+			lines.push(`- ${resultStateIcon(state, 0)} ${label}: ${state}${elapsedText}${metaText}`)
 			if (result.retryLog && result.retryLog.length > 0) {
-				lines.push(`  ↳ fallback: ${result.retryLog.join(" ")}`);
+				lines.push(`  ↳ fallback: ${result.retryLog.join(" ")}`)
 			}
 		}
 	}
 
 	if (job.status === "running" || job.status === "queued") {
-		lines.push("Job is still in progress.");
-		return lines.join("\n");
+		lines.push("Job is still in progress.")
+		return lines.join("\n")
 	}
-	if (job.errorText) lines.push(`Error: ${job.errorText}`);
-	if (job.resultText) lines.push("", job.resultText);
-	if (!job.resultText && !job.errorText) lines.push("(No output)");
-	return lines.join("\n");
+	if (job.errorText) lines.push(`Error: ${job.errorText}`)
+	if (job.resultText) lines.push("", job.resultText)
+	if (!job.resultText && !job.errorText) lines.push("(No output)")
+	return lines.join("\n")
 }
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	if (ms <= 0) return;
+	if (ms <= 0) return
 	await new Promise<void>((resolve, reject) => {
 		const timer = setTimeout(() => {
-			signal?.removeEventListener("abort", onAbort);
-			resolve();
-		}, ms);
+			signal?.removeEventListener("abort", onAbort)
+			resolve()
+		}, ms)
 
 		const onAbort = () => {
-			clearTimeout(timer);
-			reject(new Error("Aborted"));
-		};
+			clearTimeout(timer)
+			reject(new Error("Aborted"))
+		}
 
 		if (signal) {
 			if (signal.aborted) {
-				onAbort();
-				return;
+				onAbort()
+				return
 			}
-			signal.addEventListener("abort", onAbort, { once: true });
+			signal.addEventListener("abort", onAbort, { once: true })
 		}
-	});
+	})
 }
 
 async function mapWithConcurrencyLimit<TIn, TOut>(
@@ -1489,58 +1489,58 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	concurrency: number,
 	fn: (item: TIn, index: number) => Promise<TOut>,
 ): Promise<TOut[]> {
-	if (items.length === 0) return [];
-	const limit = Math.max(1, Math.min(concurrency, items.length));
-	const results: TOut[] = new Array(items.length);
-	let nextIndex = 0;
+	if (items.length === 0) return []
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+	const results: TOut[] = new Array(items.length)
+	let nextIndex = 0
 	const workers = new Array(limit).fill(null).map(async () => {
 		while (true) {
-			const current = nextIndex++;
-			if (current >= items.length) return;
-			results[current] = await fn(items[current], current);
+			const current = nextIndex++
+			if (current >= items.length) return
+			results[current] = await fn(items[current], current)
 		}
-	});
-	await Promise.all(workers);
-	return results;
+	})
+	await Promise.all(workers)
+	return results
 }
 
 function writePromptToTempFile(agentName: string, prompt: string): { dir: string; filePath: string } {
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
-	const safeName = agentName.replace(/[^\w.-]+/g, "_");
-	const filePath = path.join(tmpDir, `prompt-${safeName}.md`);
-	fs.writeFileSync(filePath, prompt, { encoding: "utf-8", mode: 0o600 });
-	return { dir: tmpDir, filePath };
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"))
+	const safeName = agentName.replace(/[^\w.-]+/g, "_")
+	const filePath = path.join(tmpDir, `prompt-${safeName}.md`)
+	fs.writeFileSync(filePath, prompt, { encoding: "utf-8", mode: 0o600 })
+	return { dir: tmpDir, filePath }
 }
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
-	const currentScript = process.argv[1];
+	const currentScript = process.argv[1]
 	if (currentScript && fs.existsSync(currentScript)) {
-		return { command: process.execPath, args: [currentScript, ...args] };
+		return { command: process.execPath, args: [currentScript, ...args] }
 	}
 
-	const execName = path.basename(process.execPath).toLowerCase();
-	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
+	const execName = path.basename(process.execPath).toLowerCase()
+	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName)
 	if (!isGenericRuntime) {
-		return { command: process.execPath, args };
+		return { command: process.execPath, args }
 	}
 
-	return { command: "pi", args };
+	return { command: "pi", args }
 }
 
 function getSubagentProcessEnv(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...process.env, PI_SESSION_PLAN_DISABLE: "1", PI_SKIP_VERSION_CHECK: "1" };
-	const fastMode = getFastModeState();
+	const env: NodeJS.ProcessEnv = { ...process.env, PI_SESSION_PLAN_DISABLE: "1", PI_SKIP_VERSION_CHECK: "1" }
+	const fastMode = getFastModeState()
 	if (fastMode.active) {
-		env[FAST_MODE_ENV_KEY] = "1";
-		env[FAST_SERVICE_TIER_ENV_KEY] = fastMode.serviceTier;
+		env[FAST_MODE_ENV_KEY] = "1"
+		env[FAST_SERVICE_TIER_ENV_KEY] = fastMode.serviceTier
 	}
-	return env;
+	return env
 }
 
-export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
+export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void
 
 function throwToolError(message: string): never {
-	throw new Error(message);
+	throw new Error(message)
 }
 
 async function runSingleAgentAttempt(
@@ -1557,16 +1557,16 @@ async function runSingleAgentAttempt(
 	selectedThinkingLevel?: ThinkingLevel,
 	category?: string,
 ): Promise<SingleResult> {
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (selectedModel) args.push("--model", selectedModel);
-	if (selectedThinkingLevel) args.push("--thinking", selectedThinkingLevel);
-	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	const args: string[] = ["--mode", "json", "-p", "--no-session"]
+	if (selectedModel) args.push("--model", selectedModel)
+	if (selectedThinkingLevel) args.push("--thinking", selectedThinkingLevel)
+	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","))
 
-	let tmpPromptDir: string | null = null;
-	let tmpPromptPath: string | null = null;
-	let releaseSlot: (() => void) | undefined;
+	let tmpPromptDir: string | null = null
+	let tmpPromptPath: string | null = null
+	let releaseSlot: (() => void) | undefined
 
-	const now = Date.now();
+	const now = Date.now()
 	const currentResult: SingleResult = {
 		agent: agentName,
 		agentSource: agent.source,
@@ -1582,129 +1582,129 @@ async function runSingleAgentAttempt(
 		runState: "running",
 		startedAt: now,
 		updatedAt: now,
-	};
+	}
 
 	const emitUpdate = () => {
-		currentResult.updatedAt = Date.now();
+		currentResult.updatedAt = Date.now()
 		if (currentResult.runState !== "completed" && currentResult.runState !== "failed" && currentResult.runState !== "cancelled") {
-			currentResult.runState = "running";
+			currentResult.runState = "running"
 		}
 		if (onUpdate) {
 			onUpdate({
 				content: [{ type: "text", text: getFinalOutput(currentResult.messages) || "(running...)" }],
 				details: makeDetails([currentResult]),
-			});
+			})
 		}
-	};
+	}
 
 	try {
-		releaseSlot = await acquireExecutionSlot(selectedModel, signal);
+		releaseSlot = await acquireExecutionSlot(selectedModel, signal)
 
 		if (agent.systemPrompt.trim()) {
-			const tmp = writePromptToTempFile(agent.name, agent.systemPrompt);
-			tmpPromptDir = tmp.dir;
-			tmpPromptPath = tmp.filePath;
-			args.push("--append-system-prompt", tmpPromptPath);
+			const tmp = writePromptToTempFile(agent.name, agent.systemPrompt)
+			tmpPromptDir = tmp.dir
+			tmpPromptPath = tmp.filePath
+			args.push("--append-system-prompt", tmpPromptPath)
 		}
 
-		args.push(`Task: ${task}`);
-		let wasAborted = false;
+		args.push(`Task: ${task}`)
+		let wasAborted = false
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const invocation = getPiInvocation(args);
+			const invocation = getPiInvocation(args)
 			const proc = spawn(invocation.command, invocation.args, {
 				cwd: cwd ?? defaultCwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 				env: getSubagentProcessEnv(),
-			});
-			let buffer = "";
+			})
+			let buffer = ""
 
 			const processLine = (line: string) => {
-				if (!line.trim()) return;
-				let event: any;
+				if (!line.trim()) return
+				let event: any
 				try {
-					event = JSON.parse(line);
+					event = JSON.parse(line)
 				} catch {
-					return;
+					return
 				}
 
 				if (event.type === "message_end" && event.message) {
-					const msg = event.message as Message;
-					currentResult.messages.push(msg);
+					const msg = event.message as Message
+					currentResult.messages.push(msg)
 
 					if (msg.role === "assistant") {
-						currentResult.usage.turns++;
-						const usage = msg.usage;
+						currentResult.usage.turns++
+						const usage = msg.usage
 						if (usage) {
-							currentResult.usage.input += usage.input || 0;
-							currentResult.usage.output += usage.output || 0;
-							currentResult.usage.cacheRead += usage.cacheRead || 0;
-							currentResult.usage.cacheWrite += usage.cacheWrite || 0;
-							currentResult.usage.cost += usage.cost?.total || 0;
-							currentResult.usage.contextTokens = usage.totalTokens || 0;
+							currentResult.usage.input += usage.input || 0
+							currentResult.usage.output += usage.output || 0
+							currentResult.usage.cacheRead += usage.cacheRead || 0
+							currentResult.usage.cacheWrite += usage.cacheWrite || 0
+							currentResult.usage.cost += usage.cost?.total || 0
+							currentResult.usage.contextTokens = usage.totalTokens || 0
 						}
-						if (!currentResult.model && msg.model) currentResult.model = msg.model;
-						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
-						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
+						if (!currentResult.model && msg.model) currentResult.model = msg.model
+						if (msg.stopReason) currentResult.stopReason = msg.stopReason
+						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage
 					}
-					emitUpdate();
+					emitUpdate()
 				}
 
-			};
+			}
 
 			proc.stdout.on("data", (data) => {
-				buffer += data.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) processLine(line);
-			});
+				buffer += data.toString()
+				const lines = buffer.split("\n")
+				buffer = lines.pop() || ""
+				for (const line of lines) processLine(line)
+			})
 
 			proc.stderr.on("data", (data) => {
-				currentResult.stderr += data.toString();
-			});
+				currentResult.stderr += data.toString()
+			})
 
 			proc.on("close", (code) => {
-				if (buffer.trim()) processLine(buffer);
-				resolve(code ?? 0);
-			});
+				if (buffer.trim()) processLine(buffer)
+				resolve(code ?? 0)
+			})
 
 			proc.on("error", () => {
-				resolve(1);
-			});
+				resolve(1)
+			})
 
 			if (signal) {
 				const killProc = () => {
-					wasAborted = true;
-					proc.kill("SIGTERM");
+					wasAborted = true
+					proc.kill("SIGTERM")
 					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
-					}, 5000);
-				};
-				if (signal.aborted) killProc();
-				else signal.addEventListener("abort", killProc, { once: true });
+						if (!proc.killed) proc.kill("SIGKILL")
+					}, 5000)
+				}
+				if (signal.aborted) killProc()
+				else signal.addEventListener("abort", killProc, { once: true })
 			}
-		});
+		})
 
-		currentResult.exitCode = exitCode;
-		currentResult.finishedAt = Date.now();
-		currentResult.updatedAt = currentResult.finishedAt;
-		if (wasAborted || currentResult.stopReason === "aborted") currentResult.runState = "cancelled";
-		else if (currentResult.exitCode !== 0 || currentResult.stopReason === "error") currentResult.runState = "failed";
-		else currentResult.runState = "completed";
-		if (wasAborted) throw new Error("Subagent was aborted");
-		return currentResult;
+		currentResult.exitCode = exitCode
+		currentResult.finishedAt = Date.now()
+		currentResult.updatedAt = currentResult.finishedAt
+		if (wasAborted || currentResult.stopReason === "aborted") currentResult.runState = "cancelled"
+		else if (currentResult.exitCode !== 0 || currentResult.stopReason === "error") currentResult.runState = "failed"
+		else currentResult.runState = "completed"
+		if (wasAborted) throw new Error("Subagent was aborted")
+		return currentResult
 	} finally {
-		releaseSlot?.();
+		releaseSlot?.()
 		if (tmpPromptPath)
 			try {
-				fs.unlinkSync(tmpPromptPath);
+				fs.unlinkSync(tmpPromptPath)
 			} catch {
 				/* ignore */
 			}
 		if (tmpPromptDir)
 			try {
-				fs.rmdirSync(tmpPromptDir);
+				fs.rmdirSync(tmpPromptDir)
 			} catch {
 				/* ignore */
 			}
@@ -1727,11 +1727,11 @@ export async function runSingleAgent(
 	fallbackModels?: string[],
 	modelContext?: ExtensionContext,
 ): Promise<SingleResult> {
-	const agent = agents.find((a) => a.name === agentName);
+	const agent = agents.find((a) => a.name === agentName)
 
 	if (!agent) {
-		const now = Date.now();
-		const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
+		const now = Date.now()
+		const available = agents.map((a) => `"${a.name}"`).join(", ") || "none"
 		return {
 			agent: agentName,
 			agentSource: "unknown",
@@ -1746,18 +1746,18 @@ export async function runSingleAgent(
 			startedAt: now,
 			updatedAt: now,
 			finishedAt: now,
-		};
+		}
 	}
 
-	const availableModelIds = getAvailableModelIds(modelContext);
-	const plan = resolveRunModelPlan(agent, availableModelIds, modelOverride, category, fallbackModels, thinkingLevelOverride);
-	const candidates = plan.modelCandidates;
-	const retryLog: string[] = [];
+	const availableModelIds = getAvailableModelIds(modelContext)
+	const plan = resolveRunModelPlan(agent, availableModelIds, modelOverride, category, fallbackModels, thinkingLevelOverride)
+	const candidates = plan.modelCandidates
+	const retryLog: string[] = []
 	if ((plan.missingCandidates?.length ?? 0) > 0) {
-		retryLog.push(`Skipped unavailable models: ${plan.missingCandidates!.join(", ")}`);
+		retryLog.push(`Skipped unavailable models: ${plan.missingCandidates!.join(", ")}`)
 	}
-	let attempts = 0;
-	let lastResult: SingleResult | undefined;
+	let attempts = 0
+	let lastResult: SingleResult | undefined
 
 	if (candidates.length === 0) {
 		const result = await runSingleAgentAttempt(
@@ -1773,22 +1773,22 @@ export async function runSingleAgent(
 			undefined,
 			plan.thinkingLevel,
 			plan.category,
-		);
-		result.attempts = 1;
-		if (retryLog.length > 0) result.retryLog = [...retryLog];
-		return result;
+		)
+		result.attempts = 1
+		if (retryLog.length > 0) result.retryLog = [...retryLog]
+		return result
 	}
 
 	for (let i = 0; i < candidates.length; i++) {
-		const candidate = candidates[i];
+		const candidate = candidates[i]
 		if (isModelCoolingDown(candidate) && hasNonCoolingCandidate(candidates, i + 1)) {
-			const coolUntil = modelRetryCooldownUntil.get(candidate) ?? Date.now();
-			const remainingSeconds = Math.max(1, Math.ceil((coolUntil - Date.now()) / 1000));
-			retryLog.push(`Skipped ${candidate} (cooldown ${remainingSeconds}s).`);
-			continue;
+			const coolUntil = modelRetryCooldownUntil.get(candidate) ?? Date.now()
+			const remainingSeconds = Math.max(1, Math.ceil((coolUntil - Date.now()) / 1000))
+			retryLog.push(`Skipped ${candidate} (cooldown ${remainingSeconds}s).`)
+			continue
 		}
 
-		attempts += 1;
+		attempts += 1
 		const result = await runSingleAgentAttempt(
 			defaultCwd,
 			agent,
@@ -1802,37 +1802,37 @@ export async function runSingleAgent(
 			candidate,
 			plan.thinkingLevel,
 			plan.category,
-		);
-		result.attempts = attempts;
-		if (retryLog.length > 0) result.retryLog = [...retryLog];
-		lastResult = result;
+		)
+		result.attempts = attempts
+		if (retryLog.length > 0) result.retryLog = [...retryLog]
+		lastResult = result
 
-		const state = getResultRunState(result);
+		const state = getResultRunState(result)
 		if (state === "completed" || state === "cancelled") {
-			if (retryLog.length > 0) result.retryLog = [...retryLog];
-			return result;
+			if (retryLog.length > 0) result.retryLog = [...retryLog]
+			return result
 		}
 
 		if (!shouldRetryWithFallback(result)) {
-			if (retryLog.length > 0) result.retryLog = [...retryLog];
-			return result;
+			if (retryLog.length > 0) result.retryLog = [...retryLog]
+			return result
 		}
 
-		markModelCooldown(candidate);
+		markModelCooldown(candidate)
 		if (i < candidates.length - 1) {
-			retryLog.push(`Retryable failure on ${candidate}; trying fallback.`);
-			continue;
+			retryLog.push(`Retryable failure on ${candidate}; trying fallback.`)
+			continue
 		}
 
-		retryLog.push(`Retryable failure on ${candidate}; no fallback models remaining.`);
-		result.retryLog = [...retryLog];
-		return result;
+		retryLog.push(`Retryable failure on ${candidate}; no fallback models remaining.`)
+		result.retryLog = [...retryLog]
+		return result
 	}
 
 	if (lastResult) {
-		lastResult.attempts = Math.max(1, attempts);
-		if (retryLog.length > 0) lastResult.retryLog = [...retryLog];
-		return lastResult;
+		lastResult.attempts = Math.max(1, attempts)
+		if (retryLog.length > 0) lastResult.retryLog = [...retryLog]
+		return lastResult
 	}
 
 	const result = await runSingleAgentAttempt(
@@ -1848,15 +1848,15 @@ export async function runSingleAgent(
 		plan.primaryModel,
 		plan.thinkingLevel,
 		plan.category,
-	);
-	result.attempts = 1;
-	if (retryLog.length > 0) result.retryLog = [...retryLog];
-	return result;
+	)
+	result.attempts = 1
+	if (retryLog.length > 0) result.retryLog = [...retryLog]
+	return result
 }
 
 const ThinkingLevelSchema = StringEnum(THINKING_LEVELS, {
 	description: "Optional thinking level override.",
-});
+})
 
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
@@ -1872,7 +1872,7 @@ const TaskItem = Type.Object({
 			description: "Optional fallback model chain for retryable failures.",
 		}),
 	),
-});
+})
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
@@ -1888,12 +1888,12 @@ const ChainItem = Type.Object({
 			description: "Optional fallback model chain for retryable failures.",
 		}),
 	),
-});
+})
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
 	default: "user",
-});
+})
 
 const SubagentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
@@ -1938,7 +1938,7 @@ const SubagentParams = Type.Object({
 		}),
 	),
 	jobLabel: Type.Optional(Type.String({ description: "Optional label shown in background job status widget." })),
-});
+})
 
 const SubagentJobActionSchema = StringEnum(
 	[
@@ -1955,17 +1955,17 @@ const SubagentJobActionSchema = StringEnum(
 		description: "Background job action.",
 		default: "list",
 	},
-);
+)
 
 const WidgetDensitySchema = StringEnum(["detailed", "compact"] as const, {
 	description: "Widget density for subagent jobs view.",
 	default: "detailed",
-});
+})
 
 const WidgetGroupingSchema = StringEnum(["job", "agent"] as const, {
 	description: "Widget grouping mode for subagent jobs view.",
 	default: "job",
-});
+})
 
 const WidgetAgentLimitSchema = Type.Union(
 	[
@@ -1980,7 +1980,7 @@ const WidgetAgentLimitSchema = Type.Union(
 	{
 		description: `Maximum agents/items shown per widget group, "all", or "default" (${DEFAULT_WIDGET_AGENT_LIMIT}).`,
 	},
-);
+)
 
 const SubagentJobParams = Type.Object({
 	action: Type.Optional(SubagentJobActionSchema),
@@ -1994,32 +1994,32 @@ const SubagentJobParams = Type.Object({
 	viewMode: Type.Optional(WidgetDensitySchema),
 	groupBy: Type.Optional(WidgetGroupingSchema),
 	agentDisplayLimit: Type.Optional(WidgetAgentLimitSchema),
-});
+})
 
 export default function (pi: ExtensionAPI) {
-	ensureTaskPreviewShortcut(pi);
+	ensureTaskPreviewShortcut(pi)
 
-	const backgroundJobs = new Map<string, BackgroundJob>();
-	let activeBackgroundJobs = 0;
-	let widgetSpinnerTick = 0;
-	let widgetTicker: ReturnType<typeof setInterval> | undefined;
-	let widgetDensity: WidgetDensity = "detailed";
-	let widgetGrouping: WidgetGrouping = "job";
-	let widgetAgentLimit: WidgetAgentLimit = DEFAULT_WIDGET_AGENT_LIMIT;
+	const backgroundJobs = new Map<string, BackgroundJob>()
+	let activeBackgroundJobs = 0
+	let widgetSpinnerTick = 0
+	let widgetTicker: ReturnType<typeof setInterval> | undefined
+	let widgetDensity: WidgetDensity = "detailed"
+	let widgetGrouping: WidgetGrouping = "job"
+	let widgetAgentLimit: WidgetAgentLimit = DEFAULT_WIDGET_AGENT_LIMIT
 
-	const getBackgroundJobs = () => Array.from(backgroundJobs.values());
+	const getBackgroundJobs = () => Array.from(backgroundJobs.values())
 	const getWidgetConfigText = () =>
-		`Widget config: group=${widgetGrouping}, view=${widgetDensity}, agents=${formatWidgetAgentLimit(widgetAgentLimit)}.`;
+		`Widget config: group=${widgetGrouping}, view=${widgetDensity}, agents=${formatWidgetAgentLimit(widgetAgentLimit)}.`
 	const applyWidgetConfig = (next: {
-		grouping?: WidgetGrouping;
-		density?: WidgetDensity;
-		agentDisplayLimit?: WidgetAgentLimit;
+		grouping?: WidgetGrouping
+		density?: WidgetDensity
+		agentDisplayLimit?: WidgetAgentLimit
 	}) => {
-		if (next.grouping) widgetGrouping = next.grouping;
-		if (next.density) widgetDensity = next.density;
-		if (next.agentDisplayLimit !== undefined) widgetAgentLimit = next.agentDisplayLimit;
-		refreshBackgroundUI();
-	};
+		if (next.grouping) widgetGrouping = next.grouping
+		if (next.density) widgetDensity = next.density
+		if (next.agentDisplayLimit !== undefined) widgetAgentLimit = next.agentDisplayLimit
+		refreshBackgroundUI()
+	}
 
 	const subjobsCommandItems = (prefix: string): Array<{ value: string; label: string }> | null => {
 		const options = [
@@ -2035,45 +2035,45 @@ export default function (pi: ExtensionAPI) {
 			"ui",
 			...getBackgroundJobs().map((job) => job.id),
 		]
-		const normalized = prefix.trim().toLowerCase();
+		const normalized = prefix.trim().toLowerCase()
 		const items = options
 			.filter((choice) => choice.toLowerCase().startsWith(normalized))
-			.map((choice) => ({ value: choice, label: choice }));
-		return items.length > 0 ? items : null;
-	};
+			.map((choice) => ({ value: choice, label: choice }))
+		return items.length > 0 ? items : null
+	}
 
 	const stopWidgetTicker = () => {
-		if (!widgetTicker) return;
-		clearInterval(widgetTicker);
-		widgetTicker = undefined;
-	};
+		if (!widgetTicker) return
+		clearInterval(widgetTicker)
+		widgetTicker = undefined
+	}
 
 	const ensureWidgetTicker = () => {
-		if (widgetTicker) return;
+		if (widgetTicker) return
 		widgetTicker = setInterval(() => {
-			widgetSpinnerTick = (widgetSpinnerTick + 1) % SPINNER_FRAMES.length;
-			refreshBackgroundUI();
-		}, WIDGET_SPINNER_INTERVAL_MS);
-	};
+			widgetSpinnerTick = (widgetSpinnerTick + 1) % SPINNER_FRAMES.length
+			refreshBackgroundUI()
+		}, WIDGET_SPINNER_INTERVAL_MS)
+	}
 
 	const refreshBackgroundUI = (ctx?: ExtensionContext) => {
-		const target = ctx ?? latestUiContext;
-		if (!target || !target.hasUI) return;
+		const target = ctx ?? latestUiContext
+		if (!target || !target.hasUI) return
 
-		const jobs = getBackgroundJobs();
+		const jobs = getBackgroundJobs()
 		if (jobs.length === 0) {
-			stopWidgetTicker();
-			target.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined);
-			target.ui.setStatus(SUBAGENT_STATUS_KEY, undefined);
-			return;
+			stopWidgetTicker()
+			target.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined)
+			target.ui.setStatus(SUBAGENT_STATUS_KEY, undefined)
+			return
 		}
 
-		const running = jobs.filter((job) => job.status === "running").length;
-		const queued = jobs.filter((job) => job.status === "queued").length;
-		const failed = jobs.filter((job) => job.status === "failed").length;
+		const running = jobs.filter((job) => job.status === "running").length
+		const queued = jobs.filter((job) => job.status === "queued").length
+		const failed = jobs.filter((job) => job.status === "failed").length
 
-		if (running > 0) ensureWidgetTicker();
-		else stopWidgetTicker();
+		if (running > 0) ensureWidgetTicker()
+		else stopWidgetTicker()
 
 		target.ui.setWidget(
 			SUBAGENT_WIDGET_KEY,
@@ -2084,88 +2084,88 @@ export default function (pi: ExtensionAPI) {
 					0,
 				),
 			{ placement: "belowEditor" },
-		);
+		)
 
-		const statusIcon = running > 0 ? SPINNER_FRAMES[widgetSpinnerTick % SPINNER_FRAMES.length] : failed > 0 ? "◐" : "✓";
-		const statusColor = running > 0 ? "warning" : failed > 0 ? "warning" : "success";
+		const statusIcon = running > 0 ? SPINNER_FRAMES[widgetSpinnerTick % SPINNER_FRAMES.length] : failed > 0 ? "◐" : "✓"
+		const statusColor = running > 0 ? "warning" : failed > 0 ? "warning" : "success"
 		const statusText =
 			target.ui.theme.fg(statusColor, statusIcon) +
 			" " +
 			target.ui.theme.fg(
 				"dim",
 				`subagents: ${running} running · ${queued} queued${failed > 0 ? ` · ${failed} failed` : ""} · ${widgetGrouping}/${widgetDensity} · agents=${formatWidgetAgentLimit(widgetAgentLimit)}`,
-			);
-		target.ui.setStatus(SUBAGENT_STATUS_KEY, statusText);
-	};
+			)
+		target.ui.setStatus(SUBAGENT_STATUS_KEY, statusText)
+	}
 
 	const pruneBackgroundJobs = () => {
-		if (backgroundJobs.size <= MAX_BACKGROUND_STORED_JOBS) return;
+		if (backgroundJobs.size <= MAX_BACKGROUND_STORED_JOBS) return
 		const removable = getBackgroundJobs()
 			.filter((job) => job.status !== "running" && job.status !== "queued")
-			.sort((a, b) => a.createdAt - b.createdAt);
+			.sort((a, b) => a.createdAt - b.createdAt)
 		while (backgroundJobs.size > MAX_BACKGROUND_STORED_JOBS && removable.length > 0) {
-			const job = removable.shift();
-			if (!job) break;
-			backgroundJobs.delete(job.id);
+			const job = removable.shift()
+			if (!job) break
+			backgroundJobs.delete(job.id)
 		}
-	};
+	}
 
-	let lastAllCompleteNotifyAt = 0;
+	let lastAllCompleteNotifyAt = 0
 	const notifyBackgroundCompletion = (job: BackgroundJob) => {
-		const target = latestUiContext;
-		if (!target || !target.hasUI) return;
-		if (job.status === "running" || job.status === "queued") return;
+		const target = latestUiContext
+		if (!target || !target.hasUI) return
+		if (job.status === "running" || job.status === "queued") return
 
-		const counts = resultCounts(job.details.results);
-		const variant = job.status === "completed" ? "info" : job.status === "cancelled" ? "warning" : "error";
+		const counts = resultCounts(job.details.results)
+		const variant = job.status === "completed" ? "info" : job.status === "cancelled" ? "warning" : "error"
 		const line =
 			`Subagent job ${shortJobId(job.id)} ${job.status}. ` +
 			`${counts.done}/${Math.max(1, counts.total)} done` +
 			(counts.failed > 0 ? ` · ${counts.failed} failed` : "") +
-			(counts.cancelled > 0 ? ` · ${counts.cancelled} cancelled` : "");
-		target.ui.notify(line, variant);
+			(counts.cancelled > 0 ? ` · ${counts.cancelled} cancelled` : "")
+		target.ui.notify(line, variant)
 
-		const remaining = getBackgroundJobs().filter((j) => j.status === "running" || j.status === "queued").length;
+		const remaining = getBackgroundJobs().filter((j) => j.status === "running" || j.status === "queued").length
 		if (remaining === 0) {
-			const now = Date.now();
+			const now = Date.now()
 			if (now - lastAllCompleteNotifyAt > 1000) {
-				lastAllCompleteNotifyAt = now;
-				target.ui.notify("All background subagent jobs complete. Use /subjobs for summaries.", "info");
+				lastAllCompleteNotifyAt = now
+				target.ui.notify("All background subagent jobs complete. Use /subjobs for summaries.", "info")
 			}
 		}
-	};
+	}
 
 	const runBackgroundJob = async (job: BackgroundJob) => {
-		activeBackgroundJobs += 1;
-		job.status = "running";
-		job.startedAt = Date.now();
-		refreshBackgroundUI();
+		activeBackgroundJobs += 1
+		job.status = "running"
+		job.startedAt = Date.now()
+		refreshBackgroundUI()
 
-		const discovery = discoverAgents(job.baseCwd, job.agentScope);
-		job.projectAgentsDir = discovery.projectAgentsDir;
-		const agents = discovery.agents;
+		const discovery = discoverAgents(job.baseCwd, job.agentScope)
+		job.projectAgentsDir = discovery.projectAgentsDir
+		const agents = discovery.agents
 
 		const makeDetails =
 			(mode: "single" | "parallel" | "chain") =>
 			(results: SingleResult[]): SubagentDetails =>
-				makeSubagentDetails(mode, job.agentScope, discovery.projectAgentsDir, results);
+				makeSubagentDetails(mode, job.agentScope, discovery.projectAgentsDir, results)
 
 		const updateDetails = (results: SingleResult[]) => {
-			job.details = makeDetails(job.mode)(results);
-			refreshBackgroundUI();
-		};
+			job.details = makeDetails(job.mode)(results)
+			refreshBackgroundUI()
+		}
 
 		try {
 			if (job.mode === "single") {
-				if (!job.params.agent || !job.params.task) throw new Error("Invalid single background job payload.");
-				const startedAt = Date.now();
+				if (!job.params.agent || !job.params.task) throw new Error("Invalid single background job payload.")
+				const startedAt = Date.now()
 				const current =
 					job.details.results[0] ??
-					makePlaceholderResult(job.params.agent, job.params.task, "unknown", undefined, job.params.category);
-				current.runState = "running";
-				current.startedAt = startedAt;
-				current.updatedAt = startedAt;
-				updateDetails([current]);
+					makePlaceholderResult(job.params.agent, job.params.task, "unknown", undefined, job.params.category)
+				current.runState = "running"
+				current.startedAt = startedAt
+				current.updatedAt = startedAt
+				updateDetails([current])
 				const result = await runSingleAgent(
 					job.baseCwd,
 					agents,
@@ -2175,44 +2175,44 @@ export default function (pi: ExtensionAPI) {
 					undefined,
 					job.abortController?.signal,
 					(partial) => {
-						const current = partial.details?.results[0];
-						if (current) updateDetails([current]);
+						const current = partial.details?.results[0]
+						if (current) updateDetails([current])
 					},
 					makeDetails("single"),
 					job.params.model,
 					job.params.thinkingLevel,
 					job.params.category,
 					job.params.fallbackModels,
-				);
-				updateDetails([result]);
+				)
+				updateDetails([result])
 
 				const isError =
-					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
 				if (isError) {
-					job.status = result.stopReason === "aborted" ? "cancelled" : "failed";
-					job.errorText = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+					job.status = result.stopReason === "aborted" ? "cancelled" : "failed"
+					job.errorText = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
 				} else {
-					job.status = "completed";
-					job.resultText = getFinalOutput(result.messages) || "(no output)";
+					job.status = "completed"
+					job.resultText = getFinalOutput(result.messages) || "(no output)"
 				}
-				return;
+				return
 			}
 
 			if (job.mode === "parallel") {
-				const tasks = job.params.tasks ?? [];
+				const tasks = job.params.tasks ?? []
 				if (tasks.length > MAX_PARALLEL_TASKS) {
-					throw new Error(`Too many parallel tasks (${tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`);
+					throw new Error(`Too many parallel tasks (${tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
 				}
 
-				const allResults = [...job.details.results];
+				const allResults = [...job.details.results]
 				const results = await mapWithConcurrencyLimit(tasks, job.maxConcurrency, async (t, index) => {
-					const startedAt = Date.now();
-					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category);
-					current.runState = "running";
-					current.startedAt = startedAt;
-					current.updatedAt = startedAt;
-					allResults[index] = current;
-					updateDetails([...allResults]);
+					const startedAt = Date.now()
+					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category)
+					current.runState = "running"
+					current.startedAt = startedAt
+					current.updatedAt = startedAt
+					allResults[index] = current
+					updateDetails([...allResults])
 					const result = await runSingleAgent(
 						job.baseCwd,
 						agents,
@@ -2222,10 +2222,10 @@ export default function (pi: ExtensionAPI) {
 						undefined,
 						job.abortController?.signal,
 						(partial) => {
-							const current = partial.details?.results[0];
+							const current = partial.details?.results[0]
 							if (current) {
-								allResults[index] = current;
-								updateDetails([...allResults]);
+								allResults[index] = current
+								updateDetails([...allResults])
 							}
 						},
 						makeDetails("parallel"),
@@ -2233,40 +2233,40 @@ export default function (pi: ExtensionAPI) {
 						t.thinkingLevel,
 						t.category,
 						t.fallbackModels,
-					);
-					allResults[index] = result;
-					updateDetails([...allResults]);
-					return result;
-				});
+					)
+					allResults[index] = result
+					updateDetails([...allResults])
+					return result
+				})
 
-				const successCount = results.filter((r) => r.exitCode === 0).length;
-				const namedAgents = withAgentInstanceNames(results);
+				const successCount = results.filter((r) => r.exitCode === 0).length
+				const namedAgents = withAgentInstanceNames(results)
 				const summaries = results.map((r, index) => {
-					const output = getFinalOutput(r.messages);
-					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "");
-					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`;
-				});
-				job.resultText = `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`;
+					const output = getFinalOutput(r.messages)
+					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "")
+					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`
+				})
+				job.resultText = `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`
 				job.status = results.some((r) => r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted")
 					? "failed"
-					: "completed";
-				return;
+					: "completed"
+				return
 			}
 
-			const chain = job.params.chain ?? [];
-			const allResults = [...job.details.results];
-			let previousOutput = "";
+			const chain = job.params.chain ?? []
+			const allResults = [...job.details.results]
+			let previousOutput = ""
 
 			for (let i = 0; i < chain.length; i++) {
-				const step = chain[i];
-				const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
-				const startedAt = Date.now();
-				const current = allResults[i] ?? makePlaceholderResult(step.agent, step.task, "unknown", i + 1, step.category);
-				current.runState = "running";
-				current.startedAt = startedAt;
-				current.updatedAt = startedAt;
-				allResults[i] = current;
-				updateDetails([...allResults]);
+				const step = chain[i]
+				const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput)
+				const startedAt = Date.now()
+				const current = allResults[i] ?? makePlaceholderResult(step.agent, step.task, "unknown", i + 1, step.category)
+				current.runState = "running"
+				current.startedAt = startedAt
+				current.updatedAt = startedAt
+				allResults[i] = current
+				updateDetails([...allResults])
 				const result = await runSingleAgent(
 					job.baseCwd,
 					agents,
@@ -2276,10 +2276,10 @@ export default function (pi: ExtensionAPI) {
 					i + 1,
 					job.abortController?.signal,
 					(partial) => {
-						const current = partial.details?.results[0];
+						const current = partial.details?.results[0]
 						if (current) {
-							allResults[i] = current;
-							updateDetails([...allResults]);
+							allResults[i] = current
+							updateDetails([...allResults])
 						}
 					},
 					makeDetails("chain"),
@@ -2287,94 +2287,94 @@ export default function (pi: ExtensionAPI) {
 					step.thinkingLevel,
 					step.category,
 					step.fallbackModels,
-				);
-				allResults[i] = result;
-				updateDetails([...allResults]);
+				)
+				allResults[i] = result
+				updateDetails([...allResults])
 
 				const isError =
-					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
 				if (isError) {
-					job.status = result.stopReason === "aborted" ? "cancelled" : "failed";
+					job.status = result.stopReason === "aborted" ? "cancelled" : "failed"
 					job.errorText =
 						`Chain stopped at step ${i + 1} (${step.agent}): ` +
-						(result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)");
-					return;
+						(result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)")
+					return
 				}
-				previousOutput = getFinalOutput(result.messages);
+				previousOutput = getFinalOutput(result.messages)
 			}
 
-			job.status = "completed";
-			const finalDone = allResults.filter((r) => r.exitCode !== -1);
-			job.resultText = finalDone.length > 0 ? getFinalOutput(finalDone[finalDone.length - 1].messages) || "(no output)" : "(no output)";
+			job.status = "completed"
+			const finalDone = allResults.filter((r) => r.exitCode !== -1)
+			job.resultText = finalDone.length > 0 ? getFinalOutput(finalDone[finalDone.length - 1].messages) || "(no output)" : "(no output)"
 		} catch (error) {
-			const aborted = job.abortController?.signal.aborted ?? false;
-			job.status = aborted ? "cancelled" : "failed";
-			job.errorText = error instanceof Error ? error.message : String(error);
+			const aborted = job.abortController?.signal.aborted ?? false
+			job.status = aborted ? "cancelled" : "failed"
+			job.errorText = error instanceof Error ? error.message : String(error)
 
-			const fallbackState: SubagentRunState = aborted ? "cancelled" : "failed";
-			let changed = false;
+			const fallbackState: SubagentRunState = aborted ? "cancelled" : "failed"
+			let changed = false
 			for (const result of job.details.results) {
-				const state = getResultRunState(result);
-				if (state === "completed" || state === "failed" || state === "cancelled") continue;
-				result.runState = fallbackState;
-				result.updatedAt = Date.now();
-				result.finishedAt = result.updatedAt;
-				if (result.exitCode === -1) result.exitCode = fallbackState === "cancelled" ? 130 : 1;
-				changed = true;
+				const state = getResultRunState(result)
+				if (state === "completed" || state === "failed" || state === "cancelled") continue
+				result.runState = fallbackState
+				result.updatedAt = Date.now()
+				result.finishedAt = result.updatedAt
+				if (result.exitCode === -1) result.exitCode = fallbackState === "cancelled" ? 130 : 1
+				changed = true
 			}
-			if (changed) updateDetails([...job.details.results]);
+			if (changed) updateDetails([...job.details.results])
 		} finally {
-			job.finishedAt = Date.now();
-			job.abortController = undefined;
-			activeBackgroundJobs = Math.max(0, activeBackgroundJobs - 1);
-			pruneBackgroundJobs();
-			refreshBackgroundUI();
-			notifyBackgroundCompletion(job);
-			scheduleBackgroundJobs();
+			job.finishedAt = Date.now()
+			job.abortController = undefined
+			activeBackgroundJobs = Math.max(0, activeBackgroundJobs - 1)
+			pruneBackgroundJobs()
+			refreshBackgroundUI()
+			notifyBackgroundCompletion(job)
+			scheduleBackgroundJobs()
 		}
-	};
+	}
 
 	const scheduleBackgroundJobs = () => {
 		while (activeBackgroundJobs < MAX_BACKGROUND_ACTIVE_JOBS) {
 			const next = getBackgroundJobs()
 				.filter((job) => job.status === "queued")
-				.sort((a, b) => a.createdAt - b.createdAt)[0];
-			if (!next) break;
-			void runBackgroundJob(next);
+				.sort((a, b) => a.createdAt - b.createdAt)[0]
+			if (!next) break
+			void runBackgroundJob(next)
 		}
-	};
+	}
 
 	const updateLatestContext = (ctx: ExtensionContext) => {
-		if (!ctx.hasUI) return;
-		latestUiContext = ctx;
-		refreshBackgroundUI(ctx);
-	};
+		if (!ctx.hasUI) return
+		latestUiContext = ctx
+		refreshBackgroundUI(ctx)
+	}
 
 	pi.on("session_start", (_event, ctx) => {
-		installSlashCommandArgumentAutocomplete(ctx, "subjobs", subjobsCommandItems);
-		updateLatestContext(ctx);
-	});
+		installSlashCommandArgumentAutocomplete(ctx, "subjobs", subjobsCommandItems)
+		updateLatestContext(ctx)
+	})
 
 	pi.on("agent_start", (_event, ctx) => {
-		updateLatestContext(ctx);
-	});
+		updateLatestContext(ctx)
+	})
 
 	pi.on("session_shutdown", (_event, ctx) => {
-		latestUiContext = undefined;
-		stopWidgetTicker();
+		latestUiContext = undefined
+		stopWidgetTicker()
 		for (const job of backgroundJobs.values()) {
 			if (job.status === "queued" || job.status === "running") {
-				job.abortController?.abort();
-				job.status = "cancelled";
-				job.finishedAt = Date.now();
-				job.errorText = job.errorText || "Cancelled during session shutdown.";
+				job.abortController?.abort()
+				job.status = "cancelled"
+				job.finishedAt = Date.now()
+				job.errorText = job.errorText || "Cancelled during session shutdown."
 			}
 		}
-		refreshBackgroundUI(ctx);
-		if (!ctx.hasUI) return;
-		ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined);
-		ctx.ui.setStatus(SUBAGENT_STATUS_KEY, undefined);
-	});
+		refreshBackgroundUI(ctx)
+		if (!ctx.hasUI) return
+		ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined)
+		ctx.ui.setStatus(SUBAGENT_STATUS_KEY, undefined)
+	})
 
 	pi.registerTool({
 		name: "subagent",
@@ -2398,29 +2398,29 @@ export default function (pi: ExtensionAPI) {
 		parameters: SubagentParams,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const agentScope: AgentScope = params.agentScope ?? "user";
-			const discovery = discoverAgents(ctx.cwd, agentScope);
-			const agents = discovery.agents;
-			const confirmProjectAgents = isProjectAgentTrustBypassEnabled() ? (params.confirmProjectAgents ?? true) : true;
+			const agentScope: AgentScope = params.agentScope ?? "user"
+			const discovery = discoverAgents(ctx.cwd, agentScope)
+			const agents = discovery.agents
+			const confirmProjectAgents = isProjectAgentTrustBypassEnabled() ? (params.confirmProjectAgents ?? true) : true
 
-			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
-			const mode = hasChain ? "chain" : hasTasks ? "parallel" : "single";
+			const hasChain = (params.chain?.length ?? 0) > 0
+			const hasTasks = (params.tasks?.length ?? 0) > 0
+			const hasSingle = Boolean(params.agent && params.task)
+			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle)
+			const mode = hasChain ? "chain" : hasTasks ? "parallel" : "single"
 			const maxConcurrency = Math.max(
 				1,
 				Math.min(MAX_CONCURRENCY, Math.floor(params.maxConcurrency ?? MAX_CONCURRENCY)),
-			);
-			const forceBackgroundForUnstable = params.forceBackgroundForUnstable ?? true;
+			)
+			const forceBackgroundForUnstable = params.forceBackgroundForUnstable ?? true
 
 			const requestedRuns: Array<{
-				agent: string;
-				model?: string;
-				thinkingLevel?: ThinkingLevel;
-				category?: string;
-				fallbackModels?: string[];
-			}> = [];
+				agent: string
+				model?: string
+				thinkingLevel?: ThinkingLevel
+				category?: string
+				fallbackModels?: string[]
+			}> = []
 			if (hasSingle && params.agent) {
 				requestedRuns.push({
 					agent: params.agent,
@@ -2428,7 +2428,7 @@ export default function (pi: ExtensionAPI) {
 					thinkingLevel: params.thinkingLevel,
 					category: params.category,
 					fallbackModels: params.fallbackModels,
-				});
+				})
 			}
 			if (hasTasks && params.tasks) {
 				for (const task of params.tasks) {
@@ -2438,7 +2438,7 @@ export default function (pi: ExtensionAPI) {
 						thinkingLevel: task.thinkingLevel,
 						category: task.category,
 						fallbackModels: task.fallbackModels,
-					});
+					})
 				}
 			}
 			if (hasChain && params.chain) {
@@ -2449,21 +2449,21 @@ export default function (pi: ExtensionAPI) {
 						thinkingLevel: step.thinkingLevel,
 						category: step.category,
 						fallbackModels: step.fallbackModels,
-					});
+					})
 				}
 			}
 
 			const unstableRequestedRuns = requestedRuns.filter((run) => {
-				const agent = agents.find((a) => a.name === run.agent);
+				const agent = agents.find((a) => a.name === run.agent)
 				if (agent) {
-					return resolveRunModelPlan(agent, getAvailableModelIds(ctx), run.model, run.category, run.fallbackModels, run.thinkingLevel).unstable;
+					return resolveRunModelPlan(agent, getAvailableModelIds(ctx), run.model, run.category, run.fallbackModels, run.thinkingLevel).unstable
 				}
-				return isUnstableCategory(run.category) || isUnstableModel(run.model);
-			});
+				return isUnstableCategory(run.category) || isUnstableModel(run.model)
+			})
 
 			const runInBackground =
 				params.background ||
-				(forceBackgroundForUnstable && unstableRequestedRuns.length > 0);
+				(forceBackgroundForUnstable && unstableRequestedRuns.length > 0)
 
 			const makeDetails =
 				(mode: "single" | "parallel" | "chain") =>
@@ -2472,46 +2472,46 @@ export default function (pi: ExtensionAPI) {
 					agentScope,
 					projectAgentsDir: discovery.projectAgentsDir,
 					results,
-				});
+				})
 
 			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-				throwToolError(`Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`);
+				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
+				throwToolError(`Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`)
 			}
 
 			if (agentScope === "project" || agentScope === "both") {
-				const requestedAgentNames = new Set<string>();
-				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
-				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
+				const requestedAgentNames = new Set<string>()
+				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent)
+				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent)
+				if (params.agent) requestedAgentNames.add(params.agent)
 
 				const projectAgentsRequested = Array.from(requestedAgentNames)
 					.map((name) => agents.find((a) => a.name === name))
-					.filter((a): a is AgentConfig => a?.source === "project");
+					.filter((a): a is AgentConfig => a?.source === "project")
 
 				if (projectAgentsRequested.length > 0 && confirmProjectAgents) {
-					const names = projectAgentsRequested.map((a) => a.name).join(", ");
-					const dir = discovery.projectAgentsDir ?? "(unknown)";
+					const names = projectAgentsRequested.map((a) => a.name).join(", ")
+					const dir = discovery.projectAgentsDir ?? "(unknown)"
 					if (!ctx.hasUI) {
 						throwToolError(
 							`Project-local agents require interactive approval. Set ${PROJECT_AGENT_TRUST_ENV_KEY}=1 and confirmProjectAgents=false only for trusted automation. Requested: ${names}. Source: ${dir}`,
-						);
+						)
 					}
 					const ok = await ctx.ui.confirm(
 						"Run project-local agents?",
 						`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
-					);
+					)
 					if (!ok)
 						return {
 							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
 							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
-						};
+						}
 				}
 			}
 
 			if (runInBackground) {
-				const sourceByName = new Map(agents.map((agent) => [agent.name, agent.source] as const));
-				let initialResults: SingleResult[] = [];
+				const sourceByName = new Map(agents.map((agent) => [agent.name, agent.source] as const))
+				let initialResults: SingleResult[] = []
 
 				if (hasChain && params.chain) {
 					initialResults = params.chain.map((step, index) =>
@@ -2522,16 +2522,16 @@ export default function (pi: ExtensionAPI) {
 							index + 1,
 							step.category,
 						),
-					);
+					)
 				}
 
 				if (hasTasks && params.tasks) {
 					if (params.tasks.length > MAX_PARALLEL_TASKS) {
-						throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`);
+						throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
 					}
 					initialResults = params.tasks.map((task) =>
 						makePlaceholderResult(task.agent, task.task, sourceByName.get(task.agent) ?? "unknown", undefined, task.category),
-					);
+					)
 				}
 
 				if (hasSingle && params.agent && params.task) {
@@ -2543,10 +2543,10 @@ export default function (pi: ExtensionAPI) {
 							undefined,
 							params.category,
 						),
-					];
+					]
 				}
 
-				const jobId = createJobId();
+				const jobId = createJobId()
 				const job: BackgroundJob = {
 					id: jobId,
 					label: params.jobLabel,
@@ -2571,24 +2571,24 @@ export default function (pi: ExtensionAPI) {
 					},
 					details: makeSubagentDetails(mode, agentScope, discovery.projectAgentsDir, initialResults),
 					abortController: new AbortController(),
-				};
+				}
 
-				backgroundJobs.set(job.id, job);
-				pruneBackgroundJobs();
-				scheduleBackgroundJobs();
-				refreshBackgroundUI(ctx);
+				backgroundJobs.set(job.id, job)
+				pruneBackgroundJobs()
+				scheduleBackgroundJobs()
+				refreshBackgroundUI(ctx)
 
 				const queuePosition =
 					job.status === "queued"
 						? getBackgroundJobs().filter((j) => j.status === "queued" && j.createdAt <= job.createdAt).length
-						: 0;
-				const positionText = queuePosition > 0 ? ` (queue position ${queuePosition})` : "";
+						: 0
+				const positionText = queuePosition > 0 ? ` (queue position ${queuePosition})` : ""
 				const forcedReason =
 					!params.background && forceBackgroundForUnstable && unstableRequestedRuns.length > 0
 						? ` Auto-background enabled for unstable route(s): ${unstableRequestedRuns
 								.map((run) => `${run.agent}${run.category ? `/${run.category}` : ""}`)
 								.join(", ")}.`
-						: "";
+						: ""
 				return {
 					content: [
 						{
@@ -2600,31 +2600,31 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 					details: makeDetails(mode)([]),
-				};
+				}
 			}
 
 			if (params.chain && params.chain.length > 0) {
-				const results: SingleResult[] = [];
-				let previousOutput = "";
+				const results: SingleResult[] = []
+				let previousOutput = ""
 
 				for (let i = 0; i < params.chain.length; i++) {
-					const step = params.chain[i];
-					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
+					const step = params.chain[i]
+					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput)
 
 					// Create update callback that includes all previous results
 					const chainUpdate: OnUpdateCallback | undefined = onUpdate
 						? (partial) => {
 								// Combine completed results with current streaming result
-								const currentResult = partial.details?.results[0];
+								const currentResult = partial.details?.results[0]
 								if (currentResult) {
-									const allResults = [...results, currentResult];
+									const allResults = [...results, currentResult]
 									onUpdate({
 										content: partial.content,
 										details: makeDetails("chain")(allResults),
-									});
+									})
 								}
 							}
-						: undefined;
+						: undefined
 
 					const result = await runSingleAgent(
 						ctx.cwd,
@@ -2641,36 +2641,36 @@ export default function (pi: ExtensionAPI) {
 						step.category,
 						step.fallbackModels,
 						ctx,
-					);
-					results.push(result);
+					)
+					results.push(result)
 
 					const isError =
-						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
 					if (isError) {
 						// Keep delegated agent failures as structured tool results so transcript rendering
 						// and session history retain the partial chain state.
 						const errorMsg =
-							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
 						return {
 							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
 							details: makeDetails("chain")(results),
-						};
+						}
 					}
-					previousOutput = getFinalOutput(result.messages);
+					previousOutput = getFinalOutput(result.messages)
 				}
 				return {
 					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
 					details: makeDetails("chain")(results),
-				};
+				}
 			}
 
 			if (params.tasks && params.tasks.length > 0) {
 				if (params.tasks.length > MAX_PARALLEL_TASKS) {
-					throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`);
+					throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
 				}
 
 				// Track all results for streaming updates
-				const allResults: SingleResult[] = new Array(params.tasks.length);
+				const allResults: SingleResult[] = new Array(params.tasks.length)
 
 				// Initialize placeholder results
 				for (let i = 0; i < params.tasks.length; i++) {
@@ -2680,13 +2680,13 @@ export default function (pi: ExtensionAPI) {
 						"unknown",
 						undefined,
 						params.tasks[i].category,
-					);
+					)
 				}
 
 				const emitParallelUpdate = () => {
 					if (onUpdate) {
-						const counts = resultCounts(allResults);
-						const queuedText = counts.pending > 0 ? `, ${counts.pending} queued` : "";
+						const counts = resultCounts(allResults)
+						const queuedText = counts.pending > 0 ? `, ${counts.pending} queued` : ""
 						onUpdate({
 							content: [
 								{
@@ -2695,18 +2695,18 @@ export default function (pi: ExtensionAPI) {
 								},
 							],
 							details: makeDetails("parallel")([...allResults]),
-						});
+						})
 					}
-				};
+				}
 
 				const results = await mapWithConcurrencyLimit(params.tasks, maxConcurrency, async (t, index) => {
-					const startedAt = Date.now();
-					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category);
-					current.runState = "running";
-					current.startedAt = startedAt;
-					current.updatedAt = startedAt;
-					allResults[index] = current;
-					emitParallelUpdate();
+					const startedAt = Date.now()
+					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category)
+					current.runState = "running"
+					current.startedAt = startedAt
+					current.updatedAt = startedAt
+					allResults[index] = current
+					emitParallelUpdate()
 					const result = await runSingleAgent(
 						ctx.cwd,
 						agents,
@@ -2718,8 +2718,8 @@ export default function (pi: ExtensionAPI) {
 						// Per-task update callback
 						(partial) => {
 							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
-								emitParallelUpdate();
+								allResults[index] = partial.details.results[0]
+								emitParallelUpdate()
 							}
 						},
 						makeDetails("parallel"),
@@ -2728,19 +2728,19 @@ export default function (pi: ExtensionAPI) {
 						t.category,
 						t.fallbackModels,
 						ctx,
-					);
-					allResults[index] = result;
-					emitParallelUpdate();
-					return result;
-				});
+					)
+					allResults[index] = result
+					emitParallelUpdate()
+					return result
+				})
 
-				const successCount = results.filter((r) => r.exitCode === 0).length;
-				const namedAgents = withAgentInstanceNames(results);
+				const successCount = results.filter((r) => r.exitCode === 0).length
+				const namedAgents = withAgentInstanceNames(results)
 				const summaries = results.map((r, index) => {
-					const output = getFinalOutput(r.messages);
-					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "");
-					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`;
-				});
+					const output = getFinalOutput(r.messages)
+					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "")
+					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`
+				})
 				return {
 					content: [
 						{
@@ -2749,7 +2749,7 @@ export default function (pi: ExtensionAPI) {
 						},
 					],
 					details: makeDetails("parallel")(results),
-				};
+				}
 			}
 
 			if (params.agent && params.task) {
@@ -2768,145 +2768,145 @@ export default function (pi: ExtensionAPI) {
 					params.category,
 					params.fallbackModels,
 					ctx,
-				);
-				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+				)
+				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
 				if (isError) {
 					// Keep delegated agent failures as structured tool results so transcript rendering
 					// and session history retain the subagent output and metadata.
 					const errorMsg =
-						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
 					return {
 						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
 						details: makeDetails("single")([result]),
-					};
+					}
 				}
 				return {
 					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
 					details: makeDetails("single")([result]),
-				};
+				}
 			}
 
-			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-			throwToolError(`Invalid parameters. Available agents: ${available}`);
+			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
+			throwToolError(`Invalid parameters. Available agents: ${available}`)
 		},
 
 		renderCall(args, theme) {
-			const scope: AgentScope = args.agentScope ?? "user";
-			const scopeLabel = args.background ? `${scope},bg` : scope;
+			const scope: AgentScope = args.agentScope ?? "user"
+			const scopeLabel = args.background ? `${scope},bg` : scope
 			if (args.chain && args.chain.length > 0) {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
 					theme.fg("accent", `chain (${args.chain.length} steps)`) +
-					theme.fg("muted", ` [${scopeLabel}]`);
+					theme.fg("muted", ` [${scopeLabel}]`)
 				for (let i = 0; i < Math.min(args.chain.length, 3); i++) {
-					const step = args.chain[i];
+					const step = args.chain[i]
 					// Clean up {previous} placeholder for display
-					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
-					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask;
+					const cleanTask = step.task.replace(/\{previous\}/g, "").trim()
+					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask
 					const routeText = step.model
 						? theme.fg("muted", ` (${step.model})`)
 						: step.category
 							? theme.fg("muted", ` [${step.category}]`)
-							: "";
+							: ""
 					text +=
 						"\n  " +
 						theme.fg("muted", `${i + 1}.`) +
 						" " +
 						theme.fg("accent", step.agent) +
 						routeText +
-						theme.fg("dim", ` ${preview}`);
+						theme.fg("dim", ` ${preview}`)
 				}
-				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
-				return new Text(text, 0, 0);
+				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`
+				return new Text(text, 0, 0)
 			}
 			if (args.tasks && args.tasks.length > 0) {
 				let text =
 					theme.fg("toolTitle", theme.bold("subagent ")) +
 					theme.fg("accent", `parallel (${args.tasks.length} tasks)`) +
-					theme.fg("muted", ` [${scopeLabel}]`);
+					theme.fg("muted", ` [${scopeLabel}]`)
 				for (const [index, t] of args.tasks.slice(0, 3).entries()) {
-					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task;
+					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task
 					const routeText = t.model
 						? theme.fg("muted", ` (${t.model})`)
 						: t.category
 							? theme.fg("muted", ` [${t.category}]`)
-							: "";
-					text += `\n  ${theme.fg("muted", `${index + 1}.`)} ${theme.fg("accent", t.agent)}${routeText}${theme.fg("dim", ` ${preview}`)}`;
+							: ""
+					text += `\n  ${theme.fg("muted", `${index + 1}.`)} ${theme.fg("accent", t.agent)}${routeText}${theme.fg("dim", ` ${preview}`)}`
 				}
-				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
-				return new Text(text, 0, 0);
+				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`
+				return new Text(text, 0, 0)
 			}
-			const agentName = args.agent || "...";
-			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "...";
+			const agentName = args.agent || "..."
+			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "..."
 			const routeText = args.model
 				? theme.fg("muted", ` (${args.model})`)
 				: args.category
 					? theme.fg("muted", ` [${args.category}]`)
-					: "";
+					: ""
 			let text =
 				theme.fg("toolTitle", theme.bold("subagent ")) +
 				theme.fg("accent", agentName) +
 				routeText +
-				theme.fg("muted", ` [${scopeLabel}]`);
-			text += `\n  ${theme.fg("dim", preview)}`;
-			return new Text(text, 0, 0);
+				theme.fg("muted", ` [${scopeLabel}]`)
+			text += `\n  ${theme.fg("dim", preview)}`
+			return new Text(text, 0, 0)
 		},
 
 		renderResult(result, { expanded }, theme) {
-			const details = result.details as SubagentDetails | undefined;
+			const details = result.details as SubagentDetails | undefined
 			if (!details || details.results.length === 0) {
-				const text = result.content[0];
-				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+				const text = result.content[0]
+				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0)
 			}
 
-			const mdTheme = getMarkdownTheme();
+			const mdTheme = getMarkdownTheme()
 
 			const renderDisplayItems = (items: DisplayItem[], limit?: number) => {
-				const toShow = limit ? items.slice(-limit) : items;
-				const skipped = limit && items.length > limit ? items.length - limit : 0;
-				let text = "";
-				if (skipped > 0) text += theme.fg("muted", `... ${skipped} earlier items\n`);
+				const toShow = limit ? items.slice(-limit) : items
+				const skipped = limit && items.length > limit ? items.length - limit : 0
+				let text = ""
+				if (skipped > 0) text += theme.fg("muted", `... ${skipped} earlier items\n`)
 				for (const item of toShow) {
 					if (item.type === "text") {
-						const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n");
-						text += `${theme.fg("toolOutput", preview)}\n`;
+						const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n")
+						text += `${theme.fg("toolOutput", preview)}\n`
 					} else {
-						text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
+						text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`
 					}
 				}
-				return text.trimEnd();
-			};
+				return text.trimEnd()
+			}
 
 			if (details.mode === "single" && details.results.length === 1) {
-				const r = details.results[0];
-				const runState = getResultRunState(r);
-				const isRunning = runState === "running" || runState === "pending";
-				const isError = runState === "failed" || runState === "cancelled";
-				const icon = runStateIconThemed(runState, theme);
-				const displayItems = getDisplayItems(r.messages);
-				const finalOutput = getFinalOutput(r.messages);
+				const r = details.results[0]
+				const runState = getResultRunState(r)
+				const isRunning = runState === "running" || runState === "pending"
+				const isError = runState === "failed" || runState === "cancelled"
+				const icon = runStateIconThemed(runState, theme)
+				const displayItems = getDisplayItems(r.messages)
+				const finalOutput = getFinalOutput(r.messages)
 
 				if (expanded) {
-					const container = new Container();
-					let header = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
+					const container = new Container()
+					let header = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`
 					if (runState !== "completed") {
-						header += ` ${theme.fg("muted", `[${runState}]`)}`;
+						header += ` ${theme.fg("muted", `[${runState}]`)}`
 					}
-					const routeMeta = formatRouteMeta(r);
-					if (routeMeta) header += ` ${theme.fg("muted", `[${routeMeta}]`)}`;
-					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
-					container.addChild(new Text(header, 0, 0));
+					const routeMeta = formatRouteMeta(r)
+					if (routeMeta) header += ` ${theme.fg("muted", `[${routeMeta}]`)}`
+					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`
+					container.addChild(new Text(header, 0, 0))
 					if (isError && r.errorMessage)
-						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
+						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0))
 					if (r.retryLog && r.retryLog.length > 0)
-						container.addChild(new Text(theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`), 0, 0));
-					container.addChild(new Spacer(1));
-					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
-					container.addChild(new Text(formatTaskPreviewBlock(r.task, theme), 0, 0));
-					container.addChild(new Spacer(1));
-					container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
+						container.addChild(new Text(theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`), 0, 0))
+					container.addChild(new Spacer(1))
+					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0))
+					container.addChild(new Text(formatTaskPreviewBlock(r.task, theme), 0, 0))
+					container.addChild(new Spacer(1))
+					container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0))
 					if (displayItems.length === 0 && !finalOutput) {
-						container.addChild(new Text(theme.fg("muted", "(no output)"), 0, 0));
+						container.addChild(new Text(theme.fg("muted", "(no output)"), 0, 0))
 					} else {
 						for (const item of displayItems) {
 							if (item.type === "toolCall")
@@ -2916,97 +2916,97 @@ export default function (pi: ExtensionAPI) {
 										0,
 										0,
 									),
-								);
+								)
 						}
 						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+							container.addChild(new Spacer(1))
+							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
 						}
 					}
-					const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel);
+					const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel)
 					if (usageStr) {
-						container.addChild(new Spacer(1));
-						container.addChild(new Text(theme.fg("dim", usageStr), 0, 0));
+						container.addChild(new Spacer(1))
+						container.addChild(new Text(theme.fg("dim", usageStr), 0, 0))
 					}
-					return container;
+					return container
 				}
 
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
-				if (runState !== "completed") text += ` ${theme.fg("muted", `[${runState}]`)}`;
-				const routeMeta = formatRouteMeta(r);
-				if (routeMeta) text += ` ${theme.fg("muted", `[${routeMeta}]`)}`;
-				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
-				if (isError && r.errorMessage) text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
-				if (r.retryLog && r.retryLog.length > 0) text += `\n${theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`)}`;
+				let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`
+				if (runState !== "completed") text += ` ${theme.fg("muted", `[${runState}]`)}`
+				const routeMeta = formatRouteMeta(r)
+				if (routeMeta) text += ` ${theme.fg("muted", `[${routeMeta}]`)}`
+				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`
+				if (isError && r.errorMessage) text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`
+				if (r.retryLog && r.retryLog.length > 0) text += `\n${theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`)}`
 				else if (displayItems.length === 0)
-					text += `\n${theme.fg("muted", isRunning ? "(running...)" : "(no output)")}`;
+					text += `\n${theme.fg("muted", isRunning ? "(running...)" : "(no output)")}`
 				else {
-					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`;
-					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
+					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`
+					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
 				}
-				const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel);
-				if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
-				return new Text(text, 0, 0);
+				const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel)
+				if (usageStr) text += `\n${theme.fg("dim", usageStr)}`
+				return new Text(text, 0, 0)
 			}
 
 			const aggregateUsage = (results: SingleResult[]) => {
-				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 }
 				for (const r of results) {
-					total.input += r.usage.input;
-					total.output += r.usage.output;
-					total.cacheRead += r.usage.cacheRead;
-					total.cacheWrite += r.usage.cacheWrite;
-					total.cost += r.usage.cost;
-					total.turns += r.usage.turns;
+					total.input += r.usage.input
+					total.output += r.usage.output
+					total.cacheRead += r.usage.cacheRead
+					total.cacheWrite += r.usage.cacheWrite
+					total.cost += r.usage.cost
+					total.turns += r.usage.turns
 				}
-				return total;
-			};
+				return total
+			}
 
 			if (details.mode === "chain") {
-				const counts = resultCounts(details.results);
-				const isRunning = counts.running > 0 || counts.pending > 0;
+				const counts = resultCounts(details.results)
+				const isRunning = counts.running > 0 || counts.pending > 0
 				const icon = isRunning
 					? runStateIconThemed("running", theme)
 					: counts.failed > 0 || counts.cancelled > 0
 						? theme.fg("error", "✗")
-						: theme.fg("success", "✓");
+						: theme.fg("success", "✓")
 				const status = isRunning
 					? `${counts.done}/${details.results.length} done, ${counts.running} running${counts.pending > 0 ? `, ${counts.pending} queued` : ""}`
-					: `${counts.completed}/${details.results.length} steps`;
-				const chainAgentNames = withAgentInstanceNames(details.results);
+					: `${counts.completed}/${details.results.length} steps`
+				const chainAgentNames = withAgentInstanceNames(details.results)
 
 				if (expanded) {
-					const container = new Container();
+					const container = new Container()
 					container.addChild(
 						new Text(
 							icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", status),
 							0,
 							0,
 						),
-					);
+					)
 					const chainTaskHint = getTaskPreviewHint(
 						getTaskPreview(details.results.find((entry) => getTaskPreview(entry.task).canToggle)?.task ?? ""),
-					);
-					if (chainTaskHint) container.addChild(new Text(theme.fg("muted", chainTaskHint), 0, 0));
+					)
+					if (chainTaskHint) container.addChild(new Text(theme.fg("muted", chainTaskHint), 0, 0))
 
 					for (let i = 0; i < details.results.length; i++) {
-						const r = details.results[i];
-						const runState = getResultRunState(r);
-						const rIcon = runStateIconThemed(runState, theme, i);
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-						const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i]);
-						const chainAgentColor = getAgentTypeColor(r.agent);
+						const r = details.results[i]
+						const runState = getResultRunState(r)
+						const rIcon = runStateIconThemed(runState, theme, i)
+						const displayItems = getDisplayItems(r.messages)
+						const finalOutput = getFinalOutput(r.messages)
+						const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i])
+						const chainAgentColor = getAgentTypeColor(r.agent)
 
-						container.addChild(new Spacer(1));
+						container.addChild(new Spacer(1))
 						container.addChild(
 							new Text(
 								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg(chainAgentColor, `${getAgentTypeIcon(r.agent)} ${chainAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`,
 								0,
 								0,
 							),
-						);
-						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0));
+						)
+						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0))
 
 						// Show tool calls
 						for (const item of displayItems) {
@@ -3017,93 +3017,93 @@ export default function (pi: ExtensionAPI) {
 										0,
 										0,
 									),
-								);
+								)
 							}
 						}
 
 						// Show final output as markdown
 						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+							container.addChild(new Spacer(1))
+							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
 						}
 
-						const stepUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel);
-						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0));
+						const stepUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel)
+						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0))
 					}
 
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
+					const usageStr = formatUsageStats(aggregateUsage(details.results))
 					if (usageStr) {
-						container.addChild(new Spacer(1));
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
+						container.addChild(new Spacer(1))
+						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0))
 					}
-					return container;
+					return container
 				}
 
 				// Collapsed view
-				let text = icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", status);
+				let text = icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", status)
 				for (let i = 0; i < details.results.length; i++) {
-					const r = details.results[i];
-					const runState = getResultRunState(r);
-					const rIcon = runStateIconThemed(runState, theme, i);
-					const displayItems = getDisplayItems(r.messages);
-					const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i]);
-					const chainAgentColor = getAgentTypeColor(r.agent);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg(chainAgentColor, `${getAgentTypeIcon(r.agent)} ${chainAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`;
+					const r = details.results[i]
+					const runState = getResultRunState(r)
+					const rIcon = runStateIconThemed(runState, theme, i)
+					const displayItems = getDisplayItems(r.messages)
+					const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i])
+					const chainAgentColor = getAgentTypeColor(r.agent)
+					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg(chainAgentColor, `${getAgentTypeIcon(r.agent)} ${chainAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`
 					if (displayItems.length === 0)
-						text += `\n${theme.fg("muted", runState === "running" || runState === "pending" ? "(running...)" : "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
+						text += `\n${theme.fg("muted", runState === "running" || runState === "pending" ? "(running...)" : "(no output)")}`
+					else text += `\n${renderDisplayItems(displayItems, 5)}`
 				}
-				const usageStr = formatUsageStats(aggregateUsage(details.results));
-				if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
-				text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
-				return new Text(text, 0, 0);
+				const usageStr = formatUsageStats(aggregateUsage(details.results))
+				if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`
+				text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
+				return new Text(text, 0, 0)
 			}
 
 			if (details.mode === "parallel") {
-				const counts = resultCounts(details.results);
-				const isRunning = counts.running > 0 || counts.pending > 0;
+				const counts = resultCounts(details.results)
+				const isRunning = counts.running > 0 || counts.pending > 0
 				const icon = isRunning
 					? runStateIconThemed("running", theme)
 					: counts.failed > 0 || counts.cancelled > 0
 						? theme.fg("warning", "◐")
-						: theme.fg("success", "✓");
+						: theme.fg("success", "✓")
 				const status = isRunning
 					? `${counts.done}/${details.results.length} done, ${counts.running} running${counts.pending > 0 ? `, ${counts.pending} queued` : ""}`
-					: `${counts.completed}/${details.results.length} tasks`;
-				const parallelAgentNames = withAgentInstanceNames(details.results);
+					: `${counts.completed}/${details.results.length} tasks`
+				const parallelAgentNames = withAgentInstanceNames(details.results)
 
 				if (expanded && !isRunning) {
-					const container = new Container();
+					const container = new Container()
 					container.addChild(
 						new Text(
 							`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`,
 							0,
 							0,
 						),
-					);
+					)
 					const parallelTaskHint = getTaskPreviewHint(
 						getTaskPreview(details.results.find((entry) => getTaskPreview(entry.task).canToggle)?.task ?? ""),
-					);
-					if (parallelTaskHint) container.addChild(new Text(theme.fg("muted", parallelTaskHint), 0, 0));
+					)
+					if (parallelTaskHint) container.addChild(new Text(theme.fg("muted", parallelTaskHint), 0, 0))
 
 					for (let i = 0; i < details.results.length; i++) {
-						const r = details.results[i];
-						const runState = getResultRunState(r);
-						const rIcon = runStateIconThemed(runState, theme, i);
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-						const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i]);
-						const parallelAgentColor = getAgentTypeColor(r.agent);
+						const r = details.results[i]
+						const runState = getResultRunState(r)
+						const rIcon = runStateIconThemed(runState, theme, i)
+						const displayItems = getDisplayItems(r.messages)
+						const finalOutput = getFinalOutput(r.messages)
+						const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i])
+						const parallelAgentColor = getAgentTypeColor(r.agent)
 
-						container.addChild(new Spacer(1));
+						container.addChild(new Spacer(1))
 						container.addChild(
 							new Text(
 								`${theme.fg("muted", "─── ") + theme.fg(parallelAgentColor, `${getAgentTypeIcon(r.agent)} ${parallelAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`,
 								0,
 								0,
 							),
-						);
-						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0));
+						)
+						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0))
 
 						// Show tool calls
 						for (const item of displayItems) {
@@ -3114,54 +3114,54 @@ export default function (pi: ExtensionAPI) {
 										0,
 										0,
 									),
-								);
+								)
 							}
 						}
 
 						// Show final output as markdown
 						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
+							container.addChild(new Spacer(1))
+							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
 						}
 
-						const taskUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel);
-						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
+						const taskUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel)
+						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0))
 					}
 
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
+					const usageStr = formatUsageStats(aggregateUsage(details.results))
 					if (usageStr) {
-						container.addChild(new Spacer(1));
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
+						container.addChild(new Spacer(1))
+						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0))
 					}
-					return container;
+					return container
 				}
 
 				// Collapsed view (or still running)
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
+				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`
 				for (let i = 0; i < details.results.length; i++) {
-					const r = details.results[i];
-					const runState = getResultRunState(r);
-					const rIcon = runStateIconThemed(runState, theme, i);
-					const displayItems = getDisplayItems(r.messages);
-					const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i]);
-					const parallelAgentColor = getAgentTypeColor(r.agent);
-					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg(parallelAgentColor, `${getAgentTypeIcon(r.agent)} ${parallelAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`;
+					const r = details.results[i]
+					const runState = getResultRunState(r)
+					const rIcon = runStateIconThemed(runState, theme, i)
+					const displayItems = getDisplayItems(r.messages)
+					const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i])
+					const parallelAgentColor = getAgentTypeColor(r.agent)
+					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg(parallelAgentColor, `${getAgentTypeIcon(r.agent)} ${parallelAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`
 					if (displayItems.length === 0)
-						text += `\n${theme.fg("muted", runState === "running" || runState === "pending" ? "(running...)" : "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
+						text += `\n${theme.fg("muted", runState === "running" || runState === "pending" ? "(running...)" : "(no output)")}`
+					else text += `\n${renderDisplayItems(displayItems, 5)}`
 				}
 				if (!isRunning) {
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
+					const usageStr = formatUsageStats(aggregateUsage(details.results))
+					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`
 				}
-				if (!expanded) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
-				return new Text(text, 0, 0);
+				if (!expanded) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
+				return new Text(text, 0, 0)
 			}
 
-			const text = result.content[0];
-			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+			const text = result.content[0]
+			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0)
 		},
-	});
+	})
 
 	pi.registerTool({
 		name: "subagent_jobs",
@@ -3174,80 +3174,80 @@ export default function (pi: ExtensionAPI) {
 			"Manage background subagent jobs: list, status, result, cancel, wait-all, clear completed, and configure widget view/grouping/agent display limit.",
 		parameters: SubagentJobParams,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const action = params.action ?? "list";
-			const jobs = getBackgroundJobs();
+			const action = params.action ?? "list"
+			const jobs = getBackgroundJobs()
 
 			if (action === "list") {
-				refreshBackgroundUI(ctx);
+				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: renderJobsText(jobs) }],
 					details: { count: jobs.length },
-				};
+				}
 			}
 
 			if (action === "clear-completed") {
-				let removed = 0;
+				let removed = 0
 				for (const job of jobs) {
-					if (job.status === "running" || job.status === "queued") continue;
-					backgroundJobs.delete(job.id);
-					removed += 1;
+					if (job.status === "running" || job.status === "queued") continue
+					backgroundJobs.delete(job.id)
+					removed += 1
 				}
-				refreshBackgroundUI(ctx);
+				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: `Cleared ${removed} completed/failed/cancelled jobs.` }],
 					details: { removed },
-				};
+				}
 			}
 
 			if (action === "widget-config") {
-				refreshBackgroundUI(ctx);
+				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: getWidgetConfigText() }],
 					details: { grouping: widgetGrouping, density: widgetDensity, agentDisplayLimit: widgetAgentLimit },
-				};
+				}
 			}
 
 			if (action === "widget-set") {
 				if (!params.groupBy && !params.viewMode && params.agentDisplayLimit === undefined) {
-					throwToolError("Provide groupBy, viewMode, and/or agentDisplayLimit for widget-set.");
+					throwToolError("Provide groupBy, viewMode, and/or agentDisplayLimit for widget-set.")
 				}
-				const nextGrouping = params.groupBy === "job" || params.groupBy === "agent" ? params.groupBy : undefined;
+				const nextGrouping = params.groupBy === "job" || params.groupBy === "agent" ? params.groupBy : undefined
 				const nextDensity =
-					params.viewMode === "detailed" || params.viewMode === "compact" ? params.viewMode : undefined;
-				const nextAgentLimit = parseWidgetAgentLimit(params.agentDisplayLimit);
+					params.viewMode === "detailed" || params.viewMode === "compact" ? params.viewMode : undefined
+				const nextAgentLimit = parseWidgetAgentLimit(params.agentDisplayLimit)
 				if (params.agentDisplayLimit !== undefined && nextAgentLimit === undefined) {
-					throwToolError(`agentDisplayLimit must be "all", "default", or a number from 1-${MAX_WIDGET_AGENT_LIMIT}.`);
+					throwToolError(`agentDisplayLimit must be "all", "default", or a number from 1-${MAX_WIDGET_AGENT_LIMIT}.`)
 				}
-				applyWidgetConfig({ grouping: nextGrouping, density: nextDensity, agentDisplayLimit: nextAgentLimit });
-				refreshBackgroundUI(ctx);
+				applyWidgetConfig({ grouping: nextGrouping, density: nextDensity, agentDisplayLimit: nextAgentLimit })
+				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: `Updated widget. ${getWidgetConfigText()}` }],
 					details: { grouping: widgetGrouping, density: widgetDensity, agentDisplayLimit: widgetAgentLimit },
-				};
+				}
 			}
 
 			if (action === "wait-all") {
-				const timeoutMs = Math.max(1000, Math.floor((params.timeoutSeconds ?? 900) * 1000));
-				const pollMs = Math.max(100, Math.floor(params.pollIntervalMs ?? 1000));
-				const started = Date.now();
+				const timeoutMs = Math.max(1000, Math.floor((params.timeoutSeconds ?? 900) * 1000))
+				const pollMs = Math.max(100, Math.floor(params.pollIntervalMs ?? 1000))
+				const started = Date.now()
 
 				try {
 					while (true) {
-						const currentJobs = getBackgroundJobs();
-						const active = currentJobs.filter((job) => job.status === "running" || job.status === "queued");
-						refreshBackgroundUI(ctx);
+						const currentJobs = getBackgroundJobs()
+						const active = currentJobs.filter((job) => job.status === "running" || job.status === "queued")
+						refreshBackgroundUI(ctx)
 
 						if (active.length === 0) {
 							return {
 								content: [{ type: "text", text: renderJobsText(currentJobs) }],
 								details: { waitedMs: Date.now() - started, count: currentJobs.length },
-							};
+							}
 						}
 
 						if (Date.now() - started >= timeoutMs) {
 							throwToolError(
 								`Timed out waiting for background jobs. Still active: ${active.map((job) => job.id).join(", ")}`,
-							);
+							)
 						}
 
 						onUpdate?.({
@@ -3258,169 +3258,169 @@ export default function (pi: ExtensionAPI) {
 								},
 							],
 							details: { active: active.map((job) => job.id) },
-						});
+						})
 
-						await sleep(pollMs, signal);
+						await sleep(pollMs, signal)
 					}
 				} catch (error) {
 					if (error instanceof Error && error.message.startsWith("Timed out waiting for background jobs.")) {
-						throw error;
+						throw error
 					}
-					throwToolError(`Wait interrupted: ${error instanceof Error ? error.message : String(error)}`);
+					throwToolError(`Wait interrupted: ${error instanceof Error ? error.message : String(error)}`)
 				}
 			}
 
 			if (!params.jobId) {
-				throwToolError("jobId is required for status/result/cancel actions.");
+				throwToolError("jobId is required for status/result/cancel actions.")
 			}
 
-			const job = backgroundJobs.get(params.jobId);
+			const job = backgroundJobs.get(params.jobId)
 			if (!job) {
-				throwToolError(`Unknown job: ${params.jobId}`);
+				throwToolError(`Unknown job: ${params.jobId}`)
 			}
 
 			if (action === "status") {
-				refreshBackgroundUI(ctx);
+				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: renderJobResult(job) }],
 					details: { jobId: job.id, status: job.status, mode: job.mode },
-				};
+				}
 			}
 
 			if (action === "result") {
 				return {
 					content: [{ type: "text", text: renderJobResult(job) }],
 					details: { jobId: job.id, status: job.status, mode: job.mode, details: job.details },
-				};
+				}
 			}
 
 			if (action === "cancel") {
 				if (job.status === "queued") {
-					const now = Date.now();
-					job.status = "cancelled";
-					job.finishedAt = now;
-					job.errorText = "Cancelled before start.";
+					const now = Date.now()
+					job.status = "cancelled"
+					job.finishedAt = now
+					job.errorText = "Cancelled before start."
 					for (const result of job.details.results) {
-						const state = getResultRunState(result);
-						if (state === "completed" || state === "failed" || state === "cancelled") continue;
-						result.runState = "cancelled";
-						result.updatedAt = now;
-						result.finishedAt = now;
-						if (result.exitCode === -1) result.exitCode = 130;
+						const state = getResultRunState(result)
+						if (state === "completed" || state === "failed" || state === "cancelled") continue
+						result.runState = "cancelled"
+						result.updatedAt = now
+						result.finishedAt = now
+						if (result.exitCode === -1) result.exitCode = 130
 					}
-					refreshBackgroundUI(ctx);
+					refreshBackgroundUI(ctx)
 					return {
 						content: [{ type: "text", text: `Cancelled queued job ${job.id}.` }],
 						details: { jobId: job.id, status: job.status },
-					};
+					}
 				}
 
 				if (job.status === "running") {
-					job.abortController?.abort();
-					refreshBackgroundUI(ctx);
+					job.abortController?.abort()
+					refreshBackgroundUI(ctx)
 					return {
 						content: [{ type: "text", text: `Cancellation requested for running job ${job.id}.` }],
 						details: { jobId: job.id, status: job.status },
-					};
+					}
 				}
 
 				return {
 					content: [{ type: "text", text: `Job ${job.id} is already ${job.status}.` }],
 					details: { jobId: job.id, status: job.status },
-				};
+				}
 			}
 
-			throwToolError(`Unsupported action: ${action}`);
+			throwToolError(`Unsupported action: ${action}`)
 		},
-	});
+	})
 
 	pi.registerCommand("subjobs", {
 		description:
 			"Show/clear jobs and control widget mode. Usage: /subjobs [clear|<jobId>|view [compact|detailed]|group [job|agent]|agents [all|default|<count>]|config]",
 		getArgumentCompletions: subjobsCommandItems,
 		handler: async (args, ctx) => {
-			const value = args.trim();
-			const parts = value.split(/\s+/).filter(Boolean);
-			const command = parts[0]?.toLowerCase();
-			const option = parts[1]?.toLowerCase();
+			const value = args.trim()
+			const parts = value.split(/\s+/).filter(Boolean)
+			const command = parts[0]?.toLowerCase()
+			const option = parts[1]?.toLowerCase()
 
 			if (command === "clear") {
-				let removed = 0;
+				let removed = 0
 				for (const job of getBackgroundJobs()) {
-					if (job.status === "running" || job.status === "queued") continue;
-					backgroundJobs.delete(job.id);
-					removed += 1;
+					if (job.status === "running" || job.status === "queued") continue
+					backgroundJobs.delete(job.id)
+					removed += 1
 				}
-				refreshBackgroundUI(ctx);
-				ctx.ui.notify(`Cleared ${removed} completed jobs.`, "info");
-				return;
+				refreshBackgroundUI(ctx)
+				ctx.ui.notify(`Cleared ${removed} completed jobs.`, "info")
+				return
 			}
 
 			if (command === "view") {
 				if (!option) {
-					ctx.ui.notify(getWidgetConfigText(), "info");
-					return;
+					ctx.ui.notify(getWidgetConfigText(), "info")
+					return
 				}
 				if (option !== "compact" && option !== "detailed") {
-					ctx.ui.notify("Usage: /subjobs view [compact|detailed]", "warning");
-					return;
+					ctx.ui.notify("Usage: /subjobs view [compact|detailed]", "warning")
+					return
 				}
-				applyWidgetConfig({ density: option });
-				refreshBackgroundUI(ctx);
-				ctx.ui.notify(`Updated widget view to ${option}. ${getWidgetConfigText()}`, "info");
-				return;
+				applyWidgetConfig({ density: option })
+				refreshBackgroundUI(ctx)
+				ctx.ui.notify(`Updated widget view to ${option}. ${getWidgetConfigText()}`, "info")
+				return
 			}
 
 			if (command === "group") {
 				if (!option) {
-					ctx.ui.notify(getWidgetConfigText(), "info");
-					return;
+					ctx.ui.notify(getWidgetConfigText(), "info")
+					return
 				}
 				if (option !== "job" && option !== "agent") {
-					ctx.ui.notify("Usage: /subjobs group [job|agent]", "warning");
-					return;
+					ctx.ui.notify("Usage: /subjobs group [job|agent]", "warning")
+					return
 				}
-				applyWidgetConfig({ grouping: option });
-				refreshBackgroundUI(ctx);
-				ctx.ui.notify(`Updated widget grouping to ${option}. ${getWidgetConfigText()}`, "info");
-				return;
+				applyWidgetConfig({ grouping: option })
+				refreshBackgroundUI(ctx)
+				ctx.ui.notify(`Updated widget grouping to ${option}. ${getWidgetConfigText()}`, "info")
+				return
 			}
 
 			if (command === "agents" || command === "agent-limit") {
 				if (!option) {
-					ctx.ui.notify(getWidgetConfigText(), "info");
-					return;
+					ctx.ui.notify(getWidgetConfigText(), "info")
+					return
 				}
-				const rawLimit = option === "all" || option === "default" ? option : /^\d+$/.test(option) ? Number(option) : undefined;
-				const nextAgentLimit = parseWidgetAgentLimit(rawLimit);
+				const rawLimit = option === "all" || option === "default" ? option : /^\d+$/.test(option) ? Number(option) : undefined
+				const nextAgentLimit = parseWidgetAgentLimit(rawLimit)
 				if (nextAgentLimit === undefined) {
-					ctx.ui.notify(`Usage: /subjobs agents [all|default|1-${MAX_WIDGET_AGENT_LIMIT}]`, "warning");
-					return;
+					ctx.ui.notify(`Usage: /subjobs agents [all|default|1-${MAX_WIDGET_AGENT_LIMIT}]`, "warning")
+					return
 				}
-				applyWidgetConfig({ agentDisplayLimit: nextAgentLimit });
-				refreshBackgroundUI(ctx);
-				ctx.ui.notify(`Updated widget agent display limit to ${formatWidgetAgentLimit(nextAgentLimit)}. ${getWidgetConfigText()}`, "info");
-				return;
+				applyWidgetConfig({ agentDisplayLimit: nextAgentLimit })
+				refreshBackgroundUI(ctx)
+				ctx.ui.notify(`Updated widget agent display limit to ${formatWidgetAgentLimit(nextAgentLimit)}. ${getWidgetConfigText()}`, "info")
+				return
 			}
 
 			if (command === "config" || command === "ui") {
-				ctx.ui.notify(getWidgetConfigText(), "info");
-				refreshBackgroundUI(ctx);
-				return;
+				ctx.ui.notify(getWidgetConfigText(), "info")
+				refreshBackgroundUI(ctx)
+				return
 			}
 
 			if (value.length > 0) {
-				const job = backgroundJobs.get(value);
+				const job = backgroundJobs.get(value)
 				if (!job) {
-					ctx.ui.notify(`Unknown job: ${value}`, "warning");
-					return;
+					ctx.ui.notify(`Unknown job: ${value}`, "warning")
+					return
 				}
-				ctx.ui.notify(renderJobResult(job), "info");
-				return;
+				ctx.ui.notify(renderJobResult(job), "info")
+				return
 			}
 
-			ctx.ui.notify(`${renderJobsText(getBackgroundJobs())}\n${getWidgetConfigText()}`, "info");
-			refreshBackgroundUI(ctx);
+			ctx.ui.notify(`${renderJobsText(getBackgroundJobs())}\n${getWidgetConfigText()}`, "info")
+			refreshBackgroundUI(ctx)
 		},
-	});
+	})
 }
