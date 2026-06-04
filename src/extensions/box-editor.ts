@@ -1,13 +1,13 @@
 /**
- * Box Editor — wraps the input editor in a rounded-corner box
- * with contextual labels embedded in the border lines.
- *
- * Top-left:     shell mode
- * Top-right:    context usage · model · thinking / notify / fast indicators
- * Bottom-right: git branch · ~/cwd
- *
- * Usage: loaded via the pi-tools root package.
- */
+	* Box Editor — wraps the input editor in a rounded-corner box
+	* with contextual labels embedded in the border lines.
+	*
+	* Top-left:     shell mode
+	* Top-right:    context usage · model · thinking / notify / fast indicators
+	* Bottom-right: git branch · ~/cwd
+	*
+	* Usage: loaded via the pi-tools root package.
+	*/
 
 import { CustomEditor, type ExtensionAPI, type KeybindingsManager } from "@earendil-works/pi-coding-agent"
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
@@ -88,8 +88,8 @@ function readFastModeState(ctx: any): { active: boolean; serviceTier: string } {
 }
 
 /**
- * Build a horizontal border line with rounded corners and optional labels.
- */
+	* Build a horizontal border line with rounded corners and optional labels.
+	*/
 function buildBorder(
 	bc: (s: string) => string,
 	width: number,
