@@ -339,6 +339,70 @@ function parseGoalMarker(text: string): GoalMarker | undefined {
 	return candidate.marker
 }
 
+function isLikelyPromptSectionHeader(line: string): boolean {
+	return /^(?:#{1,6}\s*)?(?:context|background|constraints?|requirements?|acceptance criteria|plan|steps?|instructions?|notes?|details?|examples?|deliverables?|scope|out of scope|verification|tests?|task):(?:\s+.*)?$/i.test(
+		line.trim(),
+	)
+}
+
+function isFenceLine(line: string): boolean {
+	return /^[ \t]*(?:```|~~~)/.test(line)
+}
+
+function parseAutoGoalPrompt(prompt: string): string | undefined {
+	const lines = prompt.replace(/\r\n?/g, "\n").split("\n")
+	let inFence = false
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!
+		if (isFenceLine(line)) {
+			inFence = !inFence
+			continue
+		}
+		if (inFence) continue
+
+		const match = line.match(/^[ \t]*goal:[ \t]*(.*)$/i)
+		if (!match) continue
+
+		const sameLineGoal = match[1]!.trim()
+		if (sameLineGoal) return sameLineGoal
+
+		const goalLines: string[] = []
+		let foundFirstGoalLine = false
+		for (let j = i + 1; j < lines.length; j++) {
+			const candidate = lines[j]!
+			const trimmed = candidate.trim()
+
+			if (!trimmed) {
+				if (foundFirstGoalLine) break
+				continue
+			}
+			if (isLikelyPromptSectionHeader(candidate)) break
+			if (isFenceLine(candidate)) break
+
+			foundFirstGoalLine = true
+			goalLines.push(candidate.trimEnd())
+		}
+
+		const followingLinesGoal = goalLines.join("\n").trim()
+		if (followingLinesGoal) return followingLinesGoal
+	}
+
+	return undefined
+}
+
+function isGoalActive(state: GoalLoopState): boolean {
+	return (
+		state.goal.trim().length > 0 &&
+		state.status !== "idle" &&
+		state.status !== "done"
+	)
+}
+
+function canAutoStartGoal(state: GoalLoopState): boolean {
+	return !isGoalActive(state)
+}
+
 function restorePersistedState(data: PersistedGoalLoopState | undefined): {
 	state: GoalLoopState
 	statusBarEnabled?: boolean
@@ -891,26 +955,18 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		)
 	}
 
-	const startGoal = async (
+	const initializeGoalState = (
 		goal: string,
-		ctx: ExtensionCommandContext,
-		options?: { maxContinuations?: number; tokenBudget?: number | null },
+		ctx: ExtensionContext,
+		options?: {
+			maxContinuations?: number
+			tokenBudget?: number | null
+			lastNote?: string
+		},
 	) => {
-		if (
-			state.status !== "idle" &&
-			state.status !== "done" &&
-			state.goal.trim() &&
-			ctx.hasUI
-		) {
-			const ok = await ctx.ui.confirm(
-				"Replace active goal?",
-				`Current: ${state.goal}\n\nNew: ${goal}`,
-			)
-			if (!ok) return
-		}
-
 		clearContinuationTimer()
 		const now = Date.now()
+		const previousTokenBudget = state.tokenBudget
 		state = {
 			status: "running",
 			goal,
@@ -921,7 +977,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 			maxContinuations:
 				options?.maxContinuations ?? DEFAULT_MAX_CONTINUATIONS,
 			missingMarkers: 0,
-			lastNote: "Starting goal loop.",
+			lastNote: options?.lastNote ?? "Starting goal loop.",
 			lastErrorSignature: undefined,
 			lastErrorDetails: undefined,
 			consecutiveErrors: 0,
@@ -930,7 +986,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 				"tokenBudget" in options &&
 				options.tokenBudget !== undefined
 					? (options.tokenBudget ?? null)
-					: state.tokenBudget,
+					: previousTokenBudget,
 			tokensUsed: 0,
 			timeUsedSeconds: 0,
 			iterationDurationsSeconds: [],
@@ -938,6 +994,22 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		activeIterationStartedAt = undefined
 		persistState()
 		updateUI(ctx)
+	}
+
+	const startGoal = async (
+		goal: string,
+		ctx: ExtensionCommandContext,
+		options?: { maxContinuations?: number; tokenBudget?: number | null },
+	) => {
+		if (isGoalActive(state) && ctx.hasUI) {
+			const ok = await ctx.ui.confirm(
+				"Replace active goal?",
+				`Current: ${state.goal}\n\nNew: ${goal}`,
+			)
+			if (!ok) return
+		}
+
+		initializeGoalState(goal, ctx, options)
 		ctx.ui.notify(
 			`Goal mode started · ${truncate(goal, 120)}${state.tokenBudget ? ` · token budget ${formatTokens(state.tokenBudget)}` : ""}`,
 			"info",
@@ -945,6 +1017,26 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		queueControlTurn("start", buildStartPrompt(state), {
 			deliverAs: "followUp",
 		})
+	}
+
+	const autoStartGoalFromPrompt = (
+		prompt: string,
+		ctx: ExtensionContext,
+	): boolean => {
+		if (!canAutoStartGoal(state)) return false
+		const goal = parseAutoGoalPrompt(prompt)
+		if (!goal) return false
+
+		initializeGoalState(goal, ctx, {
+			lastNote: "Auto-started from Goal: prompt header.",
+		})
+		activeTurnStartedAt ??= Date.now()
+		if (ctx.hasUI)
+			ctx.ui.notify(
+				`Goal mode auto-started from Goal: · ${truncate(goal, 120)}`,
+				"info",
+			)
+		return true
 	}
 
 	const resumeGoal = (ctx: ExtensionCommandContext | ExtensionContext) => {
@@ -1344,6 +1436,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 
 	pi.on("before_agent_start", (event, ctx) => {
 		latestContext = ctx
+		autoStartGoalFromPrompt(event.prompt, ctx)
 		if (
 			(state.status === "interrupted" ||
 				(state.status === "blocked" &&
