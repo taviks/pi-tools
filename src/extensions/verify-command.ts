@@ -1,6 +1,9 @@
 import * as os from "node:os"
 import * as path from "node:path"
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const WIDGET_KEY = "verify-command"
@@ -18,7 +21,8 @@ function shellQuote(value: string): string {
 }
 
 function getShell(): { command: string; argsPrefix: string[] } {
-	if (process.platform === "win32") return { command: "bash.exe", argsPrefix: ["-lc"] }
+	if (process.platform === "win32")
+		return { command: "bash.exe", argsPrefix: ["-lc"] }
 	return { command: "/bin/bash", argsPrefix: ["-lc"] }
 }
 
@@ -36,7 +40,8 @@ function parseVerifyArgs(args: string): VerifyOptions | { error: string } {
 		}
 		if (token === "--timeout" || token === "--timeout-seconds") {
 			const value = Number.parseInt(tokens[i + 1] || "", 10)
-			if (!Number.isFinite(value) || value <= 0) return { error: "--timeout requires a positive number of seconds" }
+			if (!Number.isFinite(value) || value <= 0)
+				return { error: "--timeout requires a positive number of seconds" }
 			timeoutSeconds = value
 			i += 1
 			commandStart = i + 1
@@ -44,14 +49,16 @@ function parseVerifyArgs(args: string): VerifyOptions | { error: string } {
 		}
 		if (token.startsWith("--timeout=")) {
 			const value = Number.parseInt(token.slice("--timeout=".length), 10)
-			if (!Number.isFinite(value) || value <= 0) return { error: "--timeout requires a positive number of seconds" }
+			if (!Number.isFinite(value) || value <= 0)
+				return { error: "--timeout requires a positive number of seconds" }
 			timeoutSeconds = value
 			commandStart = i + 1
 			continue
 		}
 		if (token === "--tail") {
 			const value = Number.parseInt(tokens[i + 1] || "", 10)
-			if (!Number.isFinite(value) || value <= 0) return { error: "--tail requires a positive number of lines" }
+			if (!Number.isFinite(value) || value <= 0)
+				return { error: "--tail requires a positive number of lines" }
 			tailLines = value
 			i += 1
 			commandStart = i + 1
@@ -59,7 +66,8 @@ function parseVerifyArgs(args: string): VerifyOptions | { error: string } {
 		}
 		if (token.startsWith("--tail=")) {
 			const value = Number.parseInt(token.slice("--tail=".length), 10)
-			if (!Number.isFinite(value) || value <= 0) return { error: "--tail requires a positive number of lines" }
+			if (!Number.isFinite(value) || value <= 0)
+				return { error: "--tail requires a positive number of lines" }
 			tailLines = value
 			commandStart = i + 1
 			continue
@@ -70,7 +78,10 @@ function parseVerifyArgs(args: string): VerifyOptions | { error: string } {
 	}
 
 	const command = tokens.slice(commandStart).join(" ")
-	if (!command) return { error: "Usage: /verify [--timeout <seconds>] [--tail <lines>] <command>" }
+	if (!command)
+		return {
+			error: "Usage: /verify [--timeout <seconds>] [--tail <lines>] <command>",
+		}
 	return { command, timeoutSeconds, tailLines }
 }
 
@@ -83,7 +94,11 @@ function tempLogPath(): string {
 	return path.join(os.tmpdir(), `pi-verify-${stamp}-${suffix}.log`)
 }
 
-function buildQuietVerificationScript(command: string, logPath: string, tailLines: number): string {
+function buildQuietVerificationScript(
+	command: string,
+	logPath: string,
+	tailLines: number,
+): string {
 	return [
 		"set -o pipefail",
 		`log=${shellQuote(logPath)}`,
@@ -125,19 +140,35 @@ function renderVerifyLines(
 	return lines
 }
 
-function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+function commandItems(
+	prefix: string,
+): Array<{ value: string; label: string }> | null {
 	const normalized = prefix.trim().toLowerCase()
-	const options = ["clear", "--timeout 1200", "--tail 120", "--timeout 1200 --tail 120", "--"]
+	const options = [
+		"clear",
+		"--timeout 1200",
+		"--tail 120",
+		"--timeout 1200 --tail 120",
+		"--",
+	]
 	const items = options
 		.filter((choice) => choice.startsWith(normalized))
 		.map((choice) => ({ value: choice, label: choice }))
 	return items.length > 0 ? items : null
 }
 
-async function runVerification(pi: ExtensionAPI, ctx: ExtensionCommandContext, options: VerifyOptions) {
+async function runVerification(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	options: VerifyOptions,
+) {
 	const logPath = tempLogPath()
 	const shell = getShell()
-	const script = buildQuietVerificationScript(options.command, logPath, options.tailLines)
+	const script = buildQuietVerificationScript(
+		options.command,
+		logPath,
+		options.tailLines,
+	)
 	const timeoutMs = options.timeoutSeconds * 1000
 
 	ctx.ui.setWidget(WIDGET_KEY, [
@@ -148,8 +179,15 @@ async function runVerification(pi: ExtensionAPI, ctx: ExtensionCommandContext, o
 
 	await ctx.waitForIdle()
 
-	ctx.ui.setWidget(WIDGET_KEY, ["Verification running", `Command: ${options.command}`, `Log: ${logPath}`])
-	const result = await pi.exec(shell.command, [...shell.argsPrefix, script], { cwd: ctx.cwd, timeout: timeoutMs })
+	ctx.ui.setWidget(WIDGET_KEY, [
+		"Verification running",
+		`Command: ${options.command}`,
+		`Log: ${logPath}`,
+	])
+	const result = await pi.exec(shell.command, [...shell.argsPrefix, script], {
+		cwd: ctx.cwd,
+		timeout: timeoutMs,
+	})
 	const combined = [result.stdout, result.stderr].filter(Boolean).join("\n")
 	const lines = renderVerifyLines(
 		options.command,

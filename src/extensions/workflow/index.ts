@@ -1,8 +1,15 @@
 import { StringEnum } from "@earendil-works/pi-ai"
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
-import { type AgentConfig, type AgentScope, discoverAgents } from "../subagent/agents.js"
+import {
+	type AgentConfig,
+	type AgentScope,
+	discoverAgents,
+} from "../subagent/agents.js"
 import {
 	getFinalOutput,
 	getResultRunState,
@@ -14,7 +21,14 @@ import {
 	type UsageStats,
 } from "../subagent/index.js"
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
+const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+] as const
 const DEFAULT_MAX_CONCURRENCY = 4
 const HARD_MAX_CONCURRENCY = 10
 const DEFAULT_MAX_AGENTS = 12
@@ -34,16 +48,30 @@ const ThinkingLevelSchema = StringEnum(THINKING_LEVELS, {
 })
 
 const WorkflowTaskSchema = Type.Object({
-	label: Type.Optional(Type.String({ description: "Short label for display; defaults to the agent name." })),
+	label: Type.Optional(
+		Type.String({
+			description: "Short label for display; defaults to the agent name.",
+		}),
+	),
 	agent: Type.String({ description: "Name of the subagent to run." }),
 	task: Type.String({
-		description: "Task prompt for the subagent. Use {previous} to include outputs from earlier phases.",
+		description:
+			"Task prompt for the subagent. Use {previous} to include outputs from earlier phases.",
 	}),
-	cwd: Type.Optional(Type.String({ description: "Optional working directory for this subagent." })),
-	model: Type.Optional(Type.String({ description: "Optional model override." })),
+	cwd: Type.Optional(
+		Type.String({
+			description: "Optional working directory for this subagent.",
+		}),
+	),
+	model: Type.Optional(
+		Type.String({ description: "Optional model override." }),
+	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
-		Type.String({ description: "Optional routing category (quick, deep, review, visual-engineering, etc.)." }),
+		Type.String({
+			description:
+				"Optional routing category (quick, deep, review, visual-engineering, etc.).",
+		}),
 	),
 	fallbackModels: Type.Optional(
 		Type.Array(Type.String({ description: "Fallback model id." }), {
@@ -54,16 +82,30 @@ const WorkflowTaskSchema = Type.Object({
 
 const WorkflowPhaseSchema = Type.Object({
 	title: Type.String({ description: "Human-readable phase title." }),
-	agent: Type.Optional(Type.String({ description: "Single-agent phase: agent name." })),
-	task: Type.Optional(
-		Type.String({ description: "Single-agent phase: task prompt. Use {previous} for earlier phase outputs." }),
+	agent: Type.Optional(
+		Type.String({ description: "Single-agent phase: agent name." }),
 	),
-	label: Type.Optional(Type.String({ description: "Single-agent phase display label." })),
-	cwd: Type.Optional(Type.String({ description: "Single-agent phase working directory." })),
-	model: Type.Optional(Type.String({ description: "Single-agent phase model override." })),
+	task: Type.Optional(
+		Type.String({
+			description:
+				"Single-agent phase: task prompt. Use {previous} for earlier phase outputs.",
+		}),
+	),
+	label: Type.Optional(
+		Type.String({ description: "Single-agent phase display label." }),
+	),
+	cwd: Type.Optional(
+		Type.String({ description: "Single-agent phase working directory." }),
+	),
+	model: Type.Optional(
+		Type.String({ description: "Single-agent phase model override." }),
+	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
-		Type.String({ description: "Single-agent phase routing category (quick, deep, review, etc.)." }),
+		Type.String({
+			description:
+				"Single-agent phase routing category (quick, deep, review, etc.).",
+		}),
 	),
 	fallbackModels: Type.Optional(
 		Type.Array(Type.String({ description: "Fallback model id." }), {
@@ -72,26 +114,34 @@ const WorkflowPhaseSchema = Type.Object({
 	),
 	parallel: Type.Optional(
 		Type.Array(WorkflowTaskSchema, {
-			description: "Parallel subagent tasks for this phase. Use either this or agent+task, not both.",
+			description:
+				"Parallel subagent tasks for this phase. Use either this or agent+task, not both.",
 		}),
 	),
 	tasks: Type.Optional(
 		Type.Array(WorkflowTaskSchema, {
-			description: "Alias for parallel; useful when a model naturally names the fan-out list tasks.",
+			description:
+				"Alias for parallel; useful when a model naturally names the fan-out list tasks.",
 		}),
 	),
 })
 
 const WorkflowParams = Type.Object({
 	name: Type.String({ description: "Short snake_case workflow name." }),
-	description: Type.Optional(Type.String({ description: "Human-readable workflow description." })),
+	description: Type.Optional(
+		Type.String({ description: "Human-readable workflow description." }),
+	),
 	phases: Type.Array(WorkflowPhaseSchema, {
 		description:
 			"Ordered workflow phases. Each phase is either a single agent+task or a parallel/ tasks array of subagent tasks.",
 	}),
 	agentScope: Type.Optional(AgentScopeSchema),
 	continueOnError: Type.Optional(
-		Type.Boolean({ description: "Continue later phases after a failed subagent. Default: false.", default: false }),
+		Type.Boolean({
+			description:
+				"Continue later phases after a failed subagent. Default: false.",
+			default: false,
+		}),
 	),
 	maxConcurrency: Type.Optional(
 		Type.Number({
@@ -171,7 +221,12 @@ interface NormalizedWorkflow {
 	totalAgents: number
 }
 
-type WorkflowAgentStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
+type WorkflowAgentStatus =
+	| "queued"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled"
 type WorkflowStatus = "running" | "completed" | "failed" | "cancelled"
 
 interface WorkflowAgentSnapshot {
@@ -214,7 +269,15 @@ interface WorkflowDetails {
 }
 
 function emptyUsage(): UsageStats {
-	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 }
+	return {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		cost: 0,
+		contextTokens: 0,
+		turns: 0,
+	}
 }
 
 function addUsage(into: UsageStats, usage: UsageStats | undefined) {
@@ -225,7 +288,10 @@ function addUsage(into: UsageStats, usage: UsageStats | undefined) {
 	into.cacheWrite += usage.cacheWrite || 0
 	into.cost += usage.cost || 0
 	into.turns += usage.turns || 0
-	into.contextTokens = Math.max(into.contextTokens || 0, usage.contextTokens || 0)
+	into.contextTokens = Math.max(
+		into.contextTokens || 0,
+		usage.contextTokens || 0,
+	)
 }
 
 function formatTokens(count: number): string {
@@ -237,13 +303,15 @@ function formatTokens(count: number): string {
 
 function formatUsage(usage: UsageStats): string {
 	const parts: string[] = []
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`)
+	if (usage.turns)
+		parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`)
 	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`)
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`)
 	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`)
 	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`)
 	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`)
-	if (usage.contextTokens) parts.push(`ctx:${formatTokens(usage.contextTokens)}`)
+	if (usage.contextTokens)
+		parts.push(`ctx:${formatTokens(usage.contextTokens)}`)
 	return parts.join(" ")
 }
 
@@ -251,7 +319,11 @@ function byteLength(value: string): number {
 	return Buffer.byteLength(value, "utf8")
 }
 
-function truncateBytes(value: string, maxBytes: number, suffix: string): string {
+function truncateBytes(
+	value: string,
+	maxBytes: number,
+	suffix: string,
+): string {
 	if (byteLength(value) <= maxBytes) return value
 	let truncated = value.slice(0, maxBytes)
 	while (byteLength(truncated) > maxBytes) truncated = truncated.slice(0, -1)
@@ -281,10 +353,20 @@ function preview(value: string, max = 120): string {
 }
 
 function cleanName(value: string): string {
-	return value.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_").replace(/^_+|_+$/g, "") || "workflow"
+	return (
+		value
+			.trim()
+			.replace(/[^a-zA-Z0-9_.-]+/g, "_")
+			.replace(/^_+|_+$/g, "") || "workflow"
+	)
 }
 
-function normalizePositiveInteger(value: number | undefined, fallback: number, min: number, max: number): number {
+function normalizePositiveInteger(
+	value: number | undefined,
+	fallback: number,
+	min: number,
+	max: number,
+): number {
 	if (value === undefined) return fallback
 	const normalized = Math.floor(value)
 	if (!Number.isFinite(normalized)) return fallback
@@ -292,30 +374,47 @@ function normalizePositiveInteger(value: number | undefined, fallback: number, m
 }
 
 function normalizeWorkflow(input: WorkflowInput): NormalizedWorkflow {
-	if (!input || typeof input !== "object") throw new Error("workflow requires an object input")
+	if (!input || typeof input !== "object")
+		throw new Error("workflow requires an object input")
 	const name = cleanName(input.name || "workflow")
 	if (!Array.isArray(input.phases) || input.phases.length === 0) {
 		throw new Error("workflow requires at least one phase")
 	}
-	if (input.phases.length > 12) throw new Error("workflow has too many phases (max 12)")
+	if (input.phases.length > 12)
+		throw new Error("workflow has too many phases (max 12)")
 
-	const requestedMaxAgents = normalizePositiveInteger(input.maxAgents, DEFAULT_MAX_AGENTS, 1, HARD_MAX_AGENTS)
+	const requestedMaxAgents = normalizePositiveInteger(
+		input.maxAgents,
+		DEFAULT_MAX_AGENTS,
+		1,
+		HARD_MAX_AGENTS,
+	)
 	const maxConcurrency = normalizePositiveInteger(
 		input.maxConcurrency,
 		DEFAULT_MAX_CONCURRENCY,
 		1,
 		HARD_MAX_CONCURRENCY,
 	)
-	const timeoutSeconds = normalizePositiveInteger(input.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS, 30, 6 * 60 * 60)
+	const timeoutSeconds = normalizePositiveInteger(
+		input.timeoutSeconds,
+		DEFAULT_TIMEOUT_SECONDS,
+		30,
+		6 * 60 * 60,
+	)
 
 	const phases = input.phases.map((phase, phaseIndex) => {
 		const title = phase.title?.trim() || `Phase ${phaseIndex + 1}`
 		const parallelRuns = phase.parallel ?? phase.tasks
 		const hasParallel = Array.isArray(parallelRuns) && parallelRuns.length > 0
 		const hasSingle = Boolean(phase.agent && phase.task)
-		if (phase.parallel && phase.tasks) throw new Error(`Phase "${title}" must use either parallel or tasks, not both`)
+		if (phase.parallel && phase.tasks)
+			throw new Error(
+				`Phase "${title}" must use either parallel or tasks, not both`,
+			)
 		if (hasParallel === hasSingle) {
-			throw new Error(`Phase "${title}" must define exactly one of agent+task or parallel/tasks`)
+			throw new Error(
+				`Phase "${title}" must define exactly one of agent+task or parallel/tasks`,
+			)
 		}
 
 		const sourceRuns: WorkflowTaskInput[] = hasParallel
@@ -332,18 +431,27 @@ function normalizeWorkflow(input: WorkflowInput): NormalizedWorkflow {
 						fallbackModels: phase.fallbackModels,
 					},
 				]
-		if (sourceRuns.length === 0) throw new Error(`Phase "${title}" has no tasks`)
+		if (sourceRuns.length === 0)
+			throw new Error(`Phase "${title}" has no tasks`)
 
 		const runs = sourceRuns.map((run, runIndex) => {
 			const agent = run.agent?.trim()
 			const task = run.task?.trim()
-			if (!agent) throw new Error(`Phase "${title}" task ${runIndex + 1} is missing agent`)
-			if (!task) throw new Error(`Phase "${title}" task ${runIndex + 1} is missing task`)
+			if (!agent)
+				throw new Error(
+					`Phase "${title}" task ${runIndex + 1} is missing agent`,
+				)
+			if (!task)
+				throw new Error(
+					`Phase "${title}" task ${runIndex + 1} is missing task`,
+				)
 			return {
 				...run,
 				agent,
 				task,
-				label: run.label?.trim() || `${agent}${sourceRuns.length > 1 ? ` ${runIndex + 1}` : ""}`,
+				label:
+					run.label?.trim() ||
+					`${agent}${sourceRuns.length > 1 ? ` ${runIndex + 1}` : ""}`,
 			}
 		})
 
@@ -352,7 +460,9 @@ function normalizeWorkflow(input: WorkflowInput): NormalizedWorkflow {
 
 	const totalAgents = phases.reduce((sum, phase) => sum + phase.runs.length, 0)
 	if (totalAgents > requestedMaxAgents) {
-		throw new Error(`workflow requested ${totalAgents} agents, above maxAgents=${requestedMaxAgents}`)
+		throw new Error(
+			`workflow requested ${totalAgents} agents, above maxAgents=${requestedMaxAgents}`,
+		)
 	}
 
 	return {
@@ -370,11 +480,17 @@ function normalizeWorkflow(input: WorkflowInput): NormalizedWorkflow {
 
 function validateAgents(workflow: NormalizedWorkflow, agents: AgentConfig[]) {
 	const available = new Set(agents.map((agent) => agent.name))
-	const requested = new Set(workflow.phases.flatMap((phase) => phase.runs.map((run) => run.agent)))
+	const requested = new Set(
+		workflow.phases.flatMap((phase) => phase.runs.map((run) => run.agent)),
+	)
 	const unknown = Array.from(requested).filter((name) => !available.has(name))
 	if (unknown.length > 0) {
-		const availableText = agents.map((agent) => `${agent.name} (${agent.source})`).join(", ") || "none"
-		throw new Error(`Unknown workflow agent(s): ${unknown.join(", ")}. Available agents: ${availableText}`)
+		const availableText =
+			agents.map((agent) => `${agent.name} (${agent.source})`).join(", ") ||
+			"none"
+		throw new Error(
+			`Unknown workflow agent(s): ${unknown.join(", ")}. Available agents: ${availableText}`,
+		)
 	}
 }
 
@@ -405,7 +521,9 @@ async function confirmIfNeeded(
 	}
 
 	if (workflow.agentScope === "project" || workflow.agentScope === "both") {
-		const requested = new Set(workflow.phases.flatMap((phase) => phase.runs.map((run) => run.agent)))
+		const requested = new Set(
+			workflow.phases.flatMap((phase) => phase.runs.map((run) => run.agent)),
+		)
 		const projectAgents = Array.from(requested)
 			.map((name) => agents.find((agent) => agent.name === name))
 			.filter((agent): agent is AgentConfig => agent?.source === "project")
@@ -462,12 +580,18 @@ function createSnapshot(workflow: NormalizedWorkflow): WorkflowSnapshot {
 }
 
 function resultErrorText(result: SingleResult): string {
-	return result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
+	return (
+		result.errorMessage ||
+		result.stderr ||
+		getFinalOutput(result.messages) ||
+		"(no output)"
+	)
 }
 
 function resultText(result: SingleResult): string {
 	const state = getResultRunState(result)
-	if (state === "completed") return getFinalOutput(result.messages) || "(no output)"
+	if (state === "completed")
+		return getFinalOutput(result.messages) || "(no output)"
 	return `[${state}] ${resultErrorText(result)}`
 }
 
@@ -478,7 +602,10 @@ function workflowStatusFromResult(result: SingleResult): WorkflowAgentStatus {
 	return state
 }
 
-function applyResultToAgentSnapshot(snapshot: WorkflowAgentSnapshot, result: SingleResult) {
+function applyResultToAgentSnapshot(
+	snapshot: WorkflowAgentSnapshot,
+	result: SingleResult,
+) {
 	snapshot.status = workflowStatusFromResult(result)
 	snapshot.model = result.model ?? snapshot.model
 	snapshot.thinkingLevel = result.thinkingLevel ?? snapshot.thinkingLevel
@@ -486,11 +613,15 @@ function applyResultToAgentSnapshot(snapshot: WorkflowAgentSnapshot, result: Sin
 	snapshot.usage = result.usage
 	snapshot.startedAt = result.startedAt ?? snapshot.startedAt
 	snapshot.finishedAt = result.finishedAt ?? snapshot.finishedAt
-	if (snapshot.status === "failed" || snapshot.status === "cancelled") snapshot.error = resultErrorText(result)
+	if (snapshot.status === "failed" || snapshot.status === "cancelled")
+		snapshot.error = resultErrorText(result)
 	snapshot.outputPreview = preview(resultText(result))
 }
 
-function makeSubagentDetails(agentScope: AgentScope, projectAgentsDir: string | null) {
+function makeSubagentDetails(
+	agentScope: AgentScope,
+	projectAgentsDir: string | null,
+) {
 	return (results: SingleResult[]): SubagentDetails => ({
 		mode: "parallel",
 		agentScope,
@@ -528,7 +659,15 @@ function agentCounts(snapshot: WorkflowSnapshot) {
 		else if (agent.status === "failed") failed += 1
 		else if (agent.status === "cancelled") cancelled += 1
 	}
-	return { queued, running, completed, failed, cancelled, done: completed + failed + cancelled, total: snapshot.agents.length }
+	return {
+		queued,
+		running,
+		completed,
+		failed,
+		cancelled,
+		done: completed + failed + cancelled,
+		total: snapshot.agents.length,
+	}
 }
 
 function statusIcon(status: WorkflowAgentStatus): string {
@@ -546,7 +685,10 @@ function statusIcon(status: WorkflowAgentStatus): string {
 	}
 }
 
-function renderWorkflowText(snapshot: WorkflowSnapshot, completed = false): string {
+function renderWorkflowText(
+	snapshot: WorkflowSnapshot,
+	completed = false,
+): string {
 	const counts = agentCounts(snapshot)
 	const header = completed ? `Workflow ${snapshot.status}` : "Workflow running"
 	const stateParts = [`${counts.done}/${counts.total} done`]
@@ -558,16 +700,37 @@ function renderWorkflowText(snapshot: WorkflowSnapshot, completed = false): stri
 	if (snapshot.description) lines.push(`  ${snapshot.description}`)
 
 	for (const phase of snapshot.phases) {
-		const phaseAgents = snapshot.agents.filter((agent) => agent.phase === phase)
-		const done = phaseAgents.filter((agent) => agent.status !== "queued" && agent.status !== "running").length
-		const running = phaseAgents.filter((agent) => agent.status === "running").length
-		const failed = phaseAgents.filter((agent) => agent.status === "failed").length
-		const marker = running > 0 || snapshot.currentPhase === phase ? "▶" : done === phaseAgents.length ? "✓" : " "
-		lines.push(`  ${marker} ${phase} ${done}/${phaseAgents.length}${running ? ` · ${running} running` : ""}${failed ? ` · ${failed} failed` : ""}`)
+		const phaseAgents = snapshot.agents.filter(
+			(agent) => agent.phase === phase,
+		)
+		const done = phaseAgents.filter(
+			(agent) => agent.status !== "queued" && agent.status !== "running",
+		).length
+		const running = phaseAgents.filter(
+			(agent) => agent.status === "running",
+		).length
+		const failed = phaseAgents.filter(
+			(agent) => agent.status === "failed",
+		).length
+		const marker =
+			running > 0 || snapshot.currentPhase === phase
+				? "▶"
+				: done === phaseAgents.length
+					? "✓"
+					: " "
+		lines.push(
+			`  ${marker} ${phase} ${done}/${phaseAgents.length}${running ? ` · ${running} running` : ""}${failed ? ` · ${failed} failed` : ""}`,
+		)
 		for (const agent of phaseAgents) {
-			const route = agent.category ? ` [${agent.category}]` : agent.model ? ` (${agent.model})` : ""
+			const route = agent.category
+				? ` [${agent.category}]`
+				: agent.model
+					? ` (${agent.model})`
+					: ""
 			const result = agent.outputPreview ? ` — ${agent.outputPreview}` : ""
-			lines.push(`    #${agent.id} ${statusIcon(agent.status)} ${agent.label}: ${agent.agent}${route}${result}`)
+			lines.push(
+				`    #${agent.id} ${statusIcon(agent.status)} ${agent.label}: ${agent.agent}${route}${result}`,
+			)
 		}
 	}
 
@@ -579,7 +742,10 @@ function renderWorkflowText(snapshot: WorkflowSnapshot, completed = false): stri
 	return lines.join("\n")
 }
 
-function createRunSignal(parent: AbortSignal | undefined, timeoutSeconds: number) {
+function createRunSignal(
+	parent: AbortSignal | undefined,
+	timeoutSeconds: number,
+) {
 	const controller = new AbortController()
 	let timedOut = false
 	const timeout = setTimeout(() => {
@@ -621,7 +787,11 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	return results
 }
 
-function formatPhaseOutput(title: string, labels: string[], results: SingleResult[]): string {
+function formatPhaseOutput(
+	title: string,
+	labels: string[],
+	results: SingleResult[],
+): string {
 	const blocks = results.map((result, index) => {
 		const label = labels[index] ?? result.agent
 		return `### ${label} (${result.agent})\n${resultText(result)}`
@@ -639,23 +809,44 @@ async function runWorkflow(
 	projectAgentsDir: string | null,
 	ctx: ExtensionContext,
 	signal: AbortSignal | undefined,
-	onUpdate: ((result: { content: Array<{ type: "text"; text: string }>; details: WorkflowDetails }) => void) | undefined,
+	onUpdate:
+		| ((result: {
+				content: Array<{ type: "text"; text: string }>
+				details: WorkflowDetails
+		  }) => void)
+		| undefined,
 ): Promise<WorkflowDetails> {
 	const snapshot = createSnapshot(workflow)
 	const results: SingleResult[] = []
 	const phaseOutputs: string[] = []
-	const subagentDetails = makeSubagentDetails(workflow.agentScope, projectAgentsDir)
+	const subagentDetails = makeSubagentDetails(
+		workflow.agentScope,
+		projectAgentsDir,
+	)
 	const runSignal = createRunSignal(signal, workflow.timeoutSeconds)
 
 	const emit = () => {
 		onUpdate?.({
 			content: [{ type: "text", text: renderWorkflowText(snapshot, false) }],
-			details: makeDetails(snapshot, results, phaseOutputs, workflow.agentScope, projectAgentsDir),
+			details: makeDetails(
+				snapshot,
+				results,
+				phaseOutputs,
+				workflow.agentScope,
+				projectAgentsDir,
+			),
 		})
 	}
 
-	const runOne = async (phase: NormalizedPhase, run: WorkflowRunSpec, runIndex: number, previousOutput: string) => {
-		const snapshotAgent = snapshot.agents.filter((agent) => agent.phase === phase.title)[runIndex]
+	const runOne = async (
+		phase: NormalizedPhase,
+		run: WorkflowRunSpec,
+		runIndex: number,
+		previousOutput: string,
+	) => {
+		const snapshotAgent = snapshot.agents.filter(
+			(agent) => agent.phase === phase.title,
+		)[runIndex]
 		if (snapshotAgent) {
 			snapshotAgent.status = "running"
 			snapshotAgent.startedAt = Date.now()
@@ -665,7 +856,8 @@ async function runWorkflow(
 		const taskWithContext = replacePrevious(run.task, previousOutput)
 		const update: OnUpdateCallback = (partial) => {
 			const partialResult = partial.details?.results[0]
-			if (partialResult && snapshotAgent) applyResultToAgentSnapshot(snapshotAgent, partialResult)
+			if (partialResult && snapshotAgent)
+				applyResultToAgentSnapshot(snapshotAgent, partialResult)
 			emit()
 		}
 
@@ -699,16 +891,26 @@ async function runWorkflow(
 			emit()
 			const previousOutput = truncateForPrompt(phaseOutputs.join("\n\n"))
 			const phaseResults = phase.parallel
-				? await mapWithConcurrencyLimit(phase.runs, workflow.maxConcurrency, (run, index) =>
-						runOne(phase, run, index, previousOutput),
+				? await mapWithConcurrencyLimit(
+						phase.runs,
+						workflow.maxConcurrency,
+						(run, index) => runOne(phase, run, index, previousOutput),
 					)
 				: [await runOne(phase, phase.runs[0], 0, previousOutput)]
-			const phaseOutput = formatPhaseOutput(phase.title, phase.runs.map((run) => run.label), phaseResults)
+			const phaseOutput = formatPhaseOutput(
+				phase.title,
+				phase.runs.map((run) => run.label),
+				phaseResults,
+			)
 			phaseOutputs.push(phaseOutput)
 
-			const failedResults = phaseResults.filter((result) => getResultRunState(result) !== "completed")
+			const failedResults = phaseResults.filter(
+				(result) => getResultRunState(result) !== "completed",
+			)
 			if (failedResults.length > 0 && !workflow.continueOnError) {
-				const cancelled = failedResults.some((result) => getResultRunState(result) === "cancelled")
+				const cancelled = failedResults.some(
+					(result) => getResultRunState(result) === "cancelled",
+				)
 				snapshot.currentPhase = undefined
 				snapshot.status = cancelled ? "cancelled" : "failed"
 				snapshot.finishedAt = Date.now()
@@ -717,15 +919,28 @@ async function runWorkflow(
 					`Stopped after phase "${phase.title}" because ${failedResults.length} subagent(s) failed or were cancelled.`,
 				)
 				emit()
-				return makeDetails(snapshot, results, phaseOutputs, workflow.agentScope, projectAgentsDir)
+				return makeDetails(
+					snapshot,
+					results,
+					phaseOutputs,
+					workflow.agentScope,
+					projectAgentsDir,
+				)
 			}
 		}
 		snapshot.currentPhase = undefined
 		snapshot.status = "completed"
 		snapshot.finishedAt = Date.now()
-		snapshot.resultText = phaseOutputs[phaseOutputs.length - 1] || "(no output)"
+		snapshot.resultText =
+			phaseOutputs[phaseOutputs.length - 1] || "(no output)"
 		emit()
-		return makeDetails(snapshot, results, phaseOutputs, workflow.agentScope, projectAgentsDir)
+		return makeDetails(
+			snapshot,
+			results,
+			phaseOutputs,
+			workflow.agentScope,
+			projectAgentsDir,
+		)
 	} catch (error) {
 		const timedOut = runSignal.isTimedOut()
 		const cancelled = signal?.aborted || runSignal.signal.aborted
@@ -739,14 +954,21 @@ async function runWorkflow(
 		snapshot.logs.push(message)
 		for (const agent of snapshot.agents) {
 			if (agent.status === "queued" || agent.status === "running") {
-				agent.status = snapshot.status === "cancelled" ? "cancelled" : "failed"
+				agent.status =
+					snapshot.status === "cancelled" ? "cancelled" : "failed"
 				agent.error = message
 				agent.outputPreview = preview(message)
 				agent.finishedAt = Date.now()
 			}
 		}
 		emit()
-		return makeDetails(snapshot, results, phaseOutputs, workflow.agentScope, projectAgentsDir)
+		return makeDetails(
+			snapshot,
+			results,
+			phaseOutputs,
+			workflow.agentScope,
+			projectAgentsDir,
+		)
 	} finally {
 		runSignal.cleanup()
 	}
@@ -755,9 +977,15 @@ async function runWorkflow(
 function summarizeWorkflow(details: WorkflowDetails): string {
 	const snapshot = details.snapshot
 	const counts = agentCounts(snapshot)
-	const failedText = counts.failed || counts.cancelled ? `, ${counts.failed + counts.cancelled} failed/cancelled` : ""
+	const failedText =
+		counts.failed || counts.cancelled
+			? `, ${counts.failed + counts.cancelled} failed/cancelled`
+			: ""
 	const usage = formatUsage(snapshot.usage)
-	const result = snapshot.resultText || details.phaseOutputs[details.phaseOutputs.length - 1] || "(no output)"
+	const result =
+		snapshot.resultText ||
+		details.phaseOutputs[details.phaseOutputs.length - 1] ||
+		"(no output)"
 	return [
 		`Workflow ${snapshot.name} ${snapshot.status}: ${counts.completed}/${counts.total} agents completed${failedText}.`,
 		usage ? `Usage: ${usage}` : undefined,
@@ -779,7 +1007,8 @@ export default function workflowExtension(pi: ExtensionAPI) {
 			"Use {previous} in later task prompts to include prior phase outputs.",
 			"The workflow reuses the bundled subagent runner for model routing, thinking levels, categories, fallbacks, fast-mode inheritance, and agent scopes.",
 		].join(" "),
-		promptSnippet: "Run a declarative multi-subagent workflow with phases and safe fan-out/fan-in.",
+		promptSnippet:
+			"Run a declarative multi-subagent workflow with phases and safe fan-out/fan-in.",
 		promptGuidelines: [
 			"Use workflow only when the user explicitly asks for a workflow, multi-agent orchestration, broad fan-out review, large repo audit, or decomposable investigation.",
 			"For workflow, provide a compact declarative object: name, optional description, and ordered phases. Each phase must define exactly one of agent+task or parallel/tasks.",
@@ -796,17 +1025,40 @@ export default function workflowExtension(pi: ExtensionAPI) {
 			const discovery = discoverAgents(ctx.cwd, workflow.agentScope)
 			validateAgents(workflow, discovery.agents)
 
-			const ok = await confirmIfNeeded(workflow, discovery.agents, discovery.projectAgentsDir, ctx)
+			const ok = await confirmIfNeeded(
+				workflow,
+				discovery.agents,
+				discovery.projectAgentsDir,
+				ctx,
+			)
 			if (!ok) {
 				const snapshot = createSnapshot(workflow)
 				snapshot.status = "cancelled"
 				snapshot.finishedAt = Date.now()
 				snapshot.logs.push("Canceled by user.")
-				const details = makeDetails(snapshot, [], [], workflow.agentScope, discovery.projectAgentsDir)
-				return { content: [{ type: "text", text: "Canceled: workflow not approved." }], details }
+				const details = makeDetails(
+					snapshot,
+					[],
+					[],
+					workflow.agentScope,
+					discovery.projectAgentsDir,
+				)
+				return {
+					content: [
+						{ type: "text", text: "Canceled: workflow not approved." },
+					],
+					details,
+				}
 			}
 
-			const details = await runWorkflow(workflow, discovery.agents, discovery.projectAgentsDir, ctx, signal, onUpdate)
+			const details = await runWorkflow(
+				workflow,
+				discovery.agents,
+				discovery.projectAgentsDir,
+				ctx,
+				signal,
+				onUpdate,
+			)
 			return {
 				content: [{ type: "text", text: summarizeWorkflow(details) }],
 				details,
@@ -817,24 +1069,38 @@ export default function workflowExtension(pi: ExtensionAPI) {
 			let agentCount = 0
 			if (Array.isArray(args.phases)) {
 				for (const phase of args.phases) {
-					if (Array.isArray(phase.parallel)) agentCount += phase.parallel.length
-					else if (Array.isArray(phase.tasks)) agentCount += phase.tasks.length
+					if (Array.isArray(phase.parallel))
+						agentCount += phase.parallel.length
+					else if (Array.isArray(phase.tasks))
+						agentCount += phase.tasks.length
 					else agentCount += 1
 				}
 			}
 			return new Text(
 				theme.fg("toolTitle", theme.bold("workflow ")) +
 					theme.fg("accent", args.name || "workflow") +
-					theme.fg("muted", ` (${phaseCount} phases, ${agentCount} agents)`),
+					theme.fg(
+						"muted",
+						` (${phaseCount} phases, ${agentCount} agents)`,
+					),
 				0,
 				0,
 			)
 		},
 		renderResult(result, { isPartial }, theme) {
 			const details = result.details as WorkflowDetails | undefined
-			if (details?.snapshot) return new Text(renderWorkflowText(details.snapshot, !isPartial), 0, 0)
+			if (details?.snapshot)
+				return new Text(
+					renderWorkflowText(details.snapshot, !isPartial),
+					0,
+					0,
+				)
 			const text = result.content?.[0]
-			return new Text(text?.type === "text" ? text.text : theme.fg("muted", "workflow"), 0, 0)
+			return new Text(
+				text?.type === "text" ? text.text : theme.fg("muted", "workflow"),
+				0,
+				0,
+			)
 		},
 	})
 }

@@ -17,7 +17,9 @@ interface TaskPreviewSharedState {
 const TASK_PREVIEW_STATE_KEY = "__customSuiteTaskPreviewState"
 
 function getSharedState(): TaskPreviewSharedState {
-	const globalScope = globalThis as typeof globalThis & { __customSuiteTaskPreviewState?: TaskPreviewSharedState }
+	const globalScope = globalThis as typeof globalThis & {
+		__customSuiteTaskPreviewState?: TaskPreviewSharedState
+	}
 	const existingState = globalScope[TASK_PREVIEW_STATE_KEY]
 	if (existingState) return existingState
 
@@ -53,7 +55,9 @@ export function ensureTaskPreviewShortcut(pi: ExtensionAPI) {
 			sharedState.mode = sharedState.mode === "preview" ? "full" : "preview"
 			notifyListeners()
 			ctx.ui.notify(
-				sharedState.mode === "full" ? "Task previews expanded." : "Task previews collapsed.",
+				sharedState.mode === "full"
+					? "Task previews expanded."
+					: "Task previews collapsed.",
 				"info",
 			)
 		},
@@ -87,7 +91,8 @@ export function getTaskPreview(task: string): TaskPreview {
 
 	const lines = normalized.split("\n")
 	const lineOverflow = lines.length > TASK_PREVIEW_LINE_COUNT
-	const charOverflow = lines.length === 1 && normalized.length > TASK_PREVIEW_CHAR_LIMIT
+	const charOverflow =
+		lines.length === 1 && normalized.length > TASK_PREVIEW_CHAR_LIMIT
 	const canToggle = lineOverflow || charOverflow
 
 	const taskPreviewMode = getSharedState().mode
@@ -103,7 +108,9 @@ export function getTaskPreview(task: string): TaskPreview {
 
 	if (charOverflow) {
 		return {
-			lines: [`${normalized.slice(0, TASK_PREVIEW_CHAR_LIMIT).trimEnd()}...`],
+			lines: [
+				`${normalized.slice(0, TASK_PREVIEW_CHAR_LIMIT).trimEnd()}...`,
+			],
 			truncated: true,
 			canToggle: true,
 			mode: taskPreviewMode,

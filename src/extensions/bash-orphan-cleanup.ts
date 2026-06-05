@@ -1,9 +1,12 @@
-import type { ChildProcessByStdio } from 'node:child_process'
-import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import type { Readable } from 'node:stream'
-import type { BashOperations, ExtensionAPI } from '@earendil-works/pi-coding-agent'
-import { createBashToolDefinition } from '@earendil-works/pi-coding-agent'
+import type { ChildProcessByStdio } from "node:child_process"
+import { spawn } from "node:child_process"
+import { existsSync } from "node:fs"
+import type { Readable } from "node:stream"
+import type {
+	BashOperations,
+	ExtensionAPI,
+} from "@earendil-works/pi-coding-agent"
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent"
 
 const EXIT_STDIO_GRACE_MS = 100
 const TERMINATE_GRACE_MS = 1000
@@ -11,18 +14,21 @@ const TERMINATE_GRACE_MS = 1000
 const trackedPids = new Set<number>()
 
 function getShellConfig() {
-	if (process.platform !== 'win32' && existsSync('/bin/bash')) {
-		return { shell: '/bin/bash', args: ['-c'] }
+	if (process.platform !== "win32" && existsSync("/bin/bash")) {
+		return { shell: "/bin/bash", args: ["-c"] }
 	}
 
-	return { shell: process.platform === 'win32' ? 'bash.exe' : 'bash', args: ['-c'] }
+	return {
+		shell: process.platform === "win32" ? "bash.exe" : "bash",
+		args: ["-c"],
+	}
 }
 
 function signalProcessTree(pid: number, signal: NodeJS.Signals) {
-	if (process.platform === 'win32') {
-		const taskkill = spawn('taskkill', ['/F', '/T', '/PID', String(pid)], {
+	if (process.platform === "win32") {
+		const taskkill = spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
 			detached: true,
-			stdio: 'ignore',
+			stdio: "ignore",
 		})
 		taskkill.unref()
 		return
@@ -43,17 +49,20 @@ function signalProcessTree(pid: number, signal: NodeJS.Signals) {
 }
 
 function killProcessTree(pid: number) {
-	signalProcessTree(pid, 'SIGKILL')
+	signalProcessTree(pid, "SIGKILL")
 }
 
 function terminateProcessTree(pid: number) {
-	if (process.platform === 'win32') {
+	if (process.platform === "win32") {
 		killProcessTree(pid)
 		return
 	}
 
-	signalProcessTree(pid, 'SIGTERM')
-	const forceKill = setTimeout(() => signalProcessTree(pid, 'SIGKILL'), TERMINATE_GRACE_MS)
+	signalProcessTree(pid, "SIGTERM")
+	const forceKill = setTimeout(
+		() => signalProcessTree(pid, "SIGKILL"),
+		TERMINATE_GRACE_MS,
+	)
 	forceKill.unref()
 }
 
@@ -64,7 +73,9 @@ function killTrackedProcesses() {
 	trackedPids.clear()
 }
 
-function waitForChildProcess(child: ChildProcessByStdio<null, Readable, Readable>): Promise<number | null> {
+function waitForChildProcess(
+	child: ChildProcessByStdio<null, Readable, Readable>,
+): Promise<number | null> {
 	return new Promise((resolve, reject) => {
 		let settled = false
 		let exited = false
@@ -79,11 +90,11 @@ function waitForChildProcess(child: ChildProcessByStdio<null, Readable, Readable
 				postExitTimer = undefined
 			}
 
-			child.removeListener('error', onError)
-			child.removeListener('exit', onExit)
-			child.removeListener('close', onClose)
-			child.stdout?.removeListener('end', onStdoutEnd)
-			child.stderr?.removeListener('end', onStderrEnd)
+			child.removeListener("error", onError)
+			child.removeListener("exit", onExit)
+			child.removeListener("close", onClose)
+			child.stdout?.removeListener("end", onStdoutEnd)
+			child.stderr?.removeListener("end", onStderrEnd)
 		}
 
 		const finalize = (code: number | null) => {
@@ -134,7 +145,10 @@ function waitForChildProcess(child: ChildProcessByStdio<null, Readable, Readable
 			maybeFinalizeAfterExit()
 
 			if (!settled) {
-				postExitTimer = setTimeout(() => finalize(code), EXIT_STDIO_GRACE_MS)
+				postExitTimer = setTimeout(
+					() => finalize(code),
+					EXIT_STDIO_GRACE_MS,
+				)
 			}
 		}
 
@@ -142,11 +156,11 @@ function waitForChildProcess(child: ChildProcessByStdio<null, Readable, Readable
 			finalize(code)
 		}
 
-		child.stdout?.once('end', onStdoutEnd)
-		child.stderr?.once('end', onStderrEnd)
-		child.once('error', onError)
-		child.once('exit', onExit)
-		child.once('close', onClose)
+		child.stdout?.once("end", onStdoutEnd)
+		child.stderr?.once("end", onStderrEnd)
+		child.once("error", onError)
+		child.once("exit", onExit)
+		child.once("close", onClose)
 	})
 }
 
@@ -157,9 +171,9 @@ function createSweepingBashOperations(): BashOperations {
 				const { shell, args } = getShellConfig()
 				const child = spawn(shell, [...args, command], {
 					cwd,
-					detached: process.platform !== 'win32',
+					detached: process.platform !== "win32",
 					env: options.env ?? process.env,
-					stdio: ['ignore', 'pipe', 'pipe'],
+					stdio: ["ignore", "pipe", "pipe"],
 				})
 
 				if (child.pid) {
@@ -175,7 +189,7 @@ function createSweepingBashOperations(): BashOperations {
 						timeoutHandle = undefined
 					}
 
-					options.signal?.removeEventListener('abort', onAbort)
+					options.signal?.removeEventListener("abort", onAbort)
 
 					if (child.pid) {
 						// pi bash is foreground-only. If the shell exits but leaves npm/watch
@@ -205,19 +219,21 @@ function createSweepingBashOperations(): BashOperations {
 					if (options.signal.aborted) {
 						onAbort()
 					} else {
-						options.signal.addEventListener('abort', onAbort, { once: true })
+						options.signal.addEventListener("abort", onAbort, {
+							once: true,
+						})
 					}
 				}
 
-				child.stdout.on('data', options.onData)
-				child.stderr.on('data', options.onData)
+				child.stdout.on("data", options.onData)
+				child.stderr.on("data", options.onData)
 
 				waitForChildProcess(child)
 					.then((exitCode) => {
 						cleanup()
 
 						if (options.signal?.aborted) {
-							reject(new Error('aborted'))
+							reject(new Error("aborted"))
 							return
 						}
 
@@ -252,9 +268,9 @@ export default function (pi: ExtensionAPI) {
 		},
 	})
 
-	pi.on('user_bash', () => ({ operations }))
+	pi.on("user_bash", () => ({ operations }))
 
-	pi.on('session_shutdown', () => {
+	pi.on("session_shutdown", () => {
 		killTrackedProcesses()
 	})
 }

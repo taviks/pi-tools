@@ -1,6 +1,10 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core"
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai"
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import {
 	TASK_PREVIEW_SHORTCUT_LABEL,
@@ -25,15 +29,42 @@ const WIDGET_KEY = "session-plan"
 const USER_CHOICE_ACTIVE_EVENT = "user-choice:active"
 const STATE_ENTRY_TYPE = "session-plan-state"
 const TASK_CONTEXT_TYPE = "session-plan:task-list-context"
-const STALE_CONTEXT_TYPES = new Set(["session-plan:planning", "session-plan:review", "session-plan:execution", TASK_CONTEXT_TYPE])
-const PLANNING_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
+const STALE_CONTEXT_TYPES = new Set([
+	"session-plan:planning",
+	"session-plan:review",
+	"session-plan:execution",
+	TASK_CONTEXT_TYPE,
+])
+const PLANNING_SPINNER_FRAMES = [
+	"⠋",
+	"⠙",
+	"⠹",
+	"⠸",
+	"⠼",
+	"⠴",
+	"⠦",
+	"⠧",
+	"⠇",
+	"⠏",
+] as const
 const PLANNING_SPINNER_INTERVAL_MS = 80
 const SESSION_PLAN_DISABLED = process.env.PI_SESSION_PLAN_DISABLE === "1"
-const AUTOPLAN_COMMAND_CHOICES = ["on", "off", "status", "clear", "enable", "disable"] as const
+const AUTOPLAN_COMMAND_CHOICES = [
+	"on",
+	"off",
+	"status",
+	"clear",
+	"enable",
+	"disable",
+] as const
 
-function autoplanCommandItems(prefix: string): Array<{ value: string; label: string }> | null {
+function autoplanCommandItems(
+	prefix: string,
+): Array<{ value: string; label: string }> | null {
 	const normalized = prefix.trim().toLowerCase()
-	const items = AUTOPLAN_COMMAND_CHOICES.filter((choice) => choice.startsWith(normalized)).map((choice) => ({
+	const items = AUTOPLAN_COMMAND_CHOICES.filter((choice) =>
+		choice.startsWith(normalized),
+	).map((choice) => ({
 		value: choice,
 		label: choice,
 	}))
@@ -49,7 +80,9 @@ interface PersistedState {
 	steps?: SessionPlanStep[]
 }
 
-function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
+function isAssistantMessage(
+	message: AgentMessage,
+): message is AssistantMessage {
 	return message.role === "assistant" && Array.isArray(message.content)
 }
 
@@ -121,7 +154,11 @@ function pushTaskPreviewLines(
 	const [firstLine = "(empty)", ...rest] = preview.lines
 	const indent = " ".repeat(label.length + 2)
 
-	lines.push(theme.fg("accent", label) + theme.fg("dim", ": ") + theme.fg(color, firstLine))
+	lines.push(
+		theme.fg("accent", label) +
+			theme.fg("dim", ": ") +
+			theme.fg(color, firstLine),
+	)
 	for (const line of rest) {
 		lines.push(theme.fg("muted", indent) + theme.fg(color, line))
 	}
@@ -137,7 +174,11 @@ function pushTaskPreviewLines(
 	)
 }
 
-function buildTaskListContextPrompt(request: string, steps: SessionPlanStep[], goal?: string): string {
+function buildTaskListContextPrompt(
+	request: string,
+	steps: SessionPlanStep[],
+	goal?: string,
+): string {
 	const lines = [
 		"[AUTO PLAN MODE]",
 		"Create and maintain a concise numbered `## Work Plan` only for actionable work that benefits from execution tracking.",
@@ -162,7 +203,10 @@ function buildTaskListContextPrompt(request: string, steps: SessionPlanStep[], g
 	if (goal?.trim()) lines.push(`Current goal: ${goal.trim()}`)
 
 	if (steps.length === 0) {
-		lines.push("", "There is no active plan yet. If this request is actionable work, start by creating one under a `## Work Plan` heading; otherwise answer normally without a plan.")
+		lines.push(
+			"",
+			"There is no active plan yet. If this request is actionable work, start by creating one under a `## Work Plan` heading; otherwise answer normally without a plan.",
+		)
 	} else {
 		lines.push("", "Current active plan:", ...steps.map(formatTrackedStep))
 	}
@@ -215,7 +259,10 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		} satisfies PersistedState)
 	}
 
-	const resetChecklist = (ctx?: ExtensionContext, options?: { keepAutoPlan?: boolean; notify?: string }) => {
+	const resetChecklist = (
+		ctx?: ExtensionContext,
+		options?: { keepAutoPlan?: boolean; notify?: string },
+	) => {
 		autoPlanEnabled = options?.keepAutoPlan ?? autoPlanEnabled
 		mode = "idle"
 		planGoal = undefined
@@ -266,14 +313,32 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		const complete = isPlanComplete(steps)
 
 		if (working && steps.length > 0) {
-			const spinner = PLANNING_SPINNER_FRAMES[spinnerTick % PLANNING_SPINNER_FRAMES.length]
-			const elapsed = workingStartedAt ? ` · ${formatElapsed(Date.now() - workingStartedAt)}` : ""
-			target.ui.setStatus(STATUS_KEY, theme.fg("warning", `${spinner} plan · ${progress.done}/${progress.total}${elapsed}`))
+			const spinner =
+				PLANNING_SPINNER_FRAMES[
+					spinnerTick % PLANNING_SPINNER_FRAMES.length
+				]
+			const elapsed = workingStartedAt
+				? ` · ${formatElapsed(Date.now() - workingStartedAt)}`
+				: ""
+			target.ui.setStatus(
+				STATUS_KEY,
+				theme.fg(
+					"warning",
+					`${spinner} plan · ${progress.done}/${progress.total}${elapsed}`,
+				),
+			)
 		} else if (complete) {
-			target.ui.setStatus(STATUS_KEY, theme.fg("success", "✓ plan complete · clears next prompt"))
+			target.ui.setStatus(
+				STATUS_KEY,
+				theme.fg("success", "✓ plan complete · clears next prompt"),
+			)
 		} else if (steps.length > 0) {
-			const extra = progress.blocked > 0 ? ` · ${progress.blocked} blocked` : ""
-			target.ui.setStatus(STATUS_KEY, theme.fg("accent", `🧭 ${progress.done}/${progress.total}${extra}`))
+			const extra =
+				progress.blocked > 0 ? ` · ${progress.blocked} blocked` : ""
+			target.ui.setStatus(
+				STATUS_KEY,
+				theme.fg("accent", `🧭 ${progress.done}/${progress.total}${extra}`),
+			)
 		} else if (autoPlanEnabled) {
 			target.ui.setStatus(STATUS_KEY, theme.fg("dim", "🧭 plan auto"))
 		} else {
@@ -286,12 +351,25 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		}
 
 		const headerMode = !working && complete ? "complete" : modeLabel(mode)
-		const header = theme.fg("toolTitle", theme.bold("Plan")) + " " + theme.fg("dim", `(${headerMode})`)
-		const summary = complete && !working
-			? theme.fg("success", `Complete: ${progress.done}/${progress.total}`) + theme.fg("dim", " (will clear on next prompt)")
-			: working
-				? theme.fg("accent", `Working: ${progress.done}/${progress.total} complete`)
-				: theme.fg("accent", `Progress: ${progress.done}/${progress.total} complete`)
+		const header =
+			theme.fg("toolTitle", theme.bold("Plan")) +
+			" " +
+			theme.fg("dim", `(${headerMode})`)
+		const summary =
+			complete && !working
+				? theme.fg(
+						"success",
+						`Complete: ${progress.done}/${progress.total}`,
+					) + theme.fg("dim", " (will clear on next prompt)")
+				: working
+					? theme.fg(
+							"accent",
+							`Working: ${progress.done}/${progress.total} complete`,
+						)
+					: theme.fg(
+							"accent",
+							`Progress: ${progress.done}/${progress.total} complete`,
+						)
 		const lines: string[] = [header, "", summary]
 
 		if (originalRequest) {
@@ -301,7 +379,11 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 
 		if (planGoal) {
 			lines.push("")
-			lines.push(theme.fg("accent", "Goal") + theme.fg("dim", ": ") + theme.fg("text", planGoal))
+			lines.push(
+				theme.fg("accent", "Goal") +
+					theme.fg("dim", ": ") +
+					theme.fg("text", planGoal),
+			)
 		}
 
 		lines.push("")
@@ -315,8 +397,11 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 						: step.status === "in_progress"
 							? "accent"
 							: "text"
-			const text = step.status === "done" ? theme.strikethrough(step.text) : step.text
-			lines.push(theme.fg(color, `${statusIcon(step.status)} ${step.step}. ${text}`))
+			const text =
+				step.status === "done" ? theme.strikethrough(step.text) : step.text
+			lines.push(
+				theme.fg(color, `${statusIcon(step.status)} ${step.step}. ${text}`),
+			)
 			if (step.note) lines.push(theme.fg("muted", `   ↳ ${step.note}`))
 		}
 
@@ -324,7 +409,15 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	}
 
 	pi.events.on(USER_CHOICE_ACTIVE_EVENT, (event: unknown) => {
-		userChoiceActive = typeof event === "boolean" ? event : !!(event && typeof event === "object" && "active" in event && event.active === true)
+		userChoiceActive =
+			typeof event === "boolean"
+				? event
+				: !!(
+						event &&
+						typeof event === "object" &&
+						"active" in event &&
+						event.active === true
+					)
 		updateUI(latestContext)
 	})
 
@@ -335,7 +428,10 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	const restoreStateFromSession = (ctx: ExtensionContext) => {
 		const entries = ctx.sessionManager.getEntries()
 		const lastState = entries
-			.filter((entry: { type: string; customType?: string }) => entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE)
+			.filter(
+				(entry: { type: string; customType?: string }) =>
+					entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE,
+			)
 			.pop() as { data?: PersistedState } | undefined
 
 		autoPlanEnabled = !SESSION_PLAN_DISABLED
@@ -355,8 +451,11 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 			originalRequest = lastState.data.originalRequest ?? ""
 			planText = lastState.data.planText ?? ""
 
-			const restoredSteps = Array.isArray(lastState.data.steps) ? cloneSteps(lastState.data.steps) : []
-			const legacyStepsCameFromTrackableText = !planText.trim() || extractPlanSteps(planText).length > 0
+			const restoredSteps = Array.isArray(lastState.data.steps)
+				? cloneSteps(lastState.data.steps)
+				: []
+			const legacyStepsCameFromTrackableText =
+				!planText.trim() || extractPlanSteps(planText).length > 0
 			steps = legacyStepsCameFromTrackableText ? restoredSteps : []
 			if (restoredSteps.length > 0 && steps.length === 0) {
 				planText = ""
@@ -375,7 +474,8 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	})
 
 	pi.registerCommand("autoplan", {
-		description: "Manage auto-plan mode. Usage: /autoplan [on|off|status|clear]",
+		description:
+			"Manage auto-plan mode. Usage: /autoplan [on|off|status|clear]",
 		getArgumentCompletions: autoplanCommandItems,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const value = args.trim()
@@ -383,7 +483,9 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 			const progress = summarizeProgress(steps)
 
 			if (!value) {
-				const completeText = isPlanComplete(steps) ? " · complete, will clear on next prompt" : ""
+				const completeText = isPlanComplete(steps)
+					? " · complete, will clear on next prompt"
+					: ""
 				ctx.ui.notify(
 					`Auto-plan ${autoPlanEnabled ? "on" : "off"} · mode=${modeLabel(mode)} · ${progress.done}/${progress.total} done${completeText}. Use /autoplan off only as an escape hatch.`,
 					"info",
@@ -406,7 +508,9 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 			}
 
 			if (command === "status") {
-				const completeText = isPlanComplete(steps) ? " · complete, will clear on next prompt" : ""
+				const completeText = isPlanComplete(steps)
+					? " · complete, will clear on next prompt"
+					: ""
 				ctx.ui.notify(
 					`Auto-plan ${autoPlanEnabled ? "on" : "off"} · mode=${modeLabel(mode)} · ${progress.done}/${progress.total} done${completeText}.`,
 					"info",
@@ -415,7 +519,10 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 			}
 
 			if (command === "clear") {
-				resetChecklist(ctx, { keepAutoPlan: autoPlanEnabled, notify: "Cleared current plan." })
+				resetChecklist(ctx, {
+					keepAutoPlan: autoPlanEnabled,
+					notify: "Cleared current plan.",
+				})
 				return
 			}
 
@@ -431,13 +538,22 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 				return
 			}
 			const progress = summarizeProgress(steps)
-			const completeText = isPlanComplete(steps) ? " (will clear on next prompt)" : ""
-			ctx.ui.notify(`Tracked plan: ${progress.done}/${progress.total} complete${completeText}. See widget for details.`, "info")
+			const completeText = isPlanComplete(steps)
+				? " (will clear on next prompt)"
+				: ""
+			ctx.ui.notify(
+				`Tracked plan: ${progress.done}/${progress.total} complete${completeText}. See widget for details.`,
+				"info",
+			)
 		},
 	})
 
 	pi.on("session_start", (_event, ctx) => {
-		installSlashCommandArgumentAutocomplete(ctx, "autoplan", autoplanCommandItems)
+		installSlashCommandArgumentAutocomplete(
+			ctx,
+			"autoplan",
+			autoplanCommandItems,
+		)
 		latestContext = ctx
 		restoreStateFromSession(ctx)
 		updateUI(ctx)
@@ -457,7 +573,9 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	pi.on("context", async (event) => {
 		return {
 			messages: event.messages.filter((message) => {
-				const customType = (message as AgentMessage & { customType?: string }).customType
+				const customType = (
+					message as AgentMessage & { customType?: string }
+				).customType
 				return !customType || !STALE_CONTEXT_TYPES.has(customType)
 			}),
 		}
@@ -475,14 +593,19 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 
 		const continuing = isContinuationPrompt(prompt)
 		if (!steps.length || !continuing) originalRequest = prompt
-		const requestContext = continuing && originalRequest ? originalRequest : prompt
+		const requestContext =
+			continuing && originalRequest ? originalRequest : prompt
 		startWorking(ctx)
 		persistState()
 
 		return {
 			message: {
 				customType: TASK_CONTEXT_TYPE,
-				content: buildTaskListContextPrompt(requestContext, steps, planGoal),
+				content: buildTaskListContextPrompt(
+					requestContext,
+					steps,
+					planGoal,
+				),
 				display: false,
 			},
 		}
@@ -506,7 +629,10 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 				const current = steps.find((step) => step.step === extracted.step)
 				if (!current) continue
 				if (extracted.status === "done") current.status = "done"
-				else if (extracted.status === "pending" && current.status === "in_progress") {
+				else if (
+					extracted.status === "pending" &&
+					current.status === "in_progress"
+				) {
 					current.status = "pending"
 				}
 			}

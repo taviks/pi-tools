@@ -1,5 +1,18 @@
-import { buildSessionContext, convertToLlm, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent"
-import { streamSimple, type AssistantMessage, type ModelThinkingLevel, type SimpleStreamOptions, type TextContent, type ThinkingLevel } from "@earendil-works/pi-ai"
+import {
+	buildSessionContext,
+	convertToLlm,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
+import {
+	streamSimple,
+	type AssistantMessage,
+	type ModelThinkingLevel,
+	type SimpleStreamOptions,
+	type TextContent,
+	type ThinkingLevel,
+} from "@earendil-works/pi-ai"
 import { Text } from "@earendil-works/pi-tui"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
@@ -18,7 +31,15 @@ interface ParsedBtwArgs {
 	clear: boolean
 }
 
-const THINKING_VALUES = new Set<BtwThinking>(["off", "minimal", "low", "medium", "high", "xhigh", "current"])
+const THINKING_VALUES = new Set<BtwThinking>([
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"current",
+])
 
 function truncate(text: string, max = 240): string {
 	const normalized = text.replace(/\s+/g, " ").trim()
@@ -61,7 +82,9 @@ function parseBtwArgs(args: string): ParsedBtwArgs {
 			}
 		}
 
-		const thinkingMatch = token.match(/^--think(?:ing)?=(off|minimal|low|medium|high|xhigh|current)$/)
+		const thinkingMatch = token.match(
+			/^--think(?:ing)?=(off|minimal|low|medium|high|xhigh|current)$/,
+		)
 		if (thinkingMatch) {
 			thinking = thinkingMatch[1] as BtwThinking
 			continue
@@ -90,14 +113,20 @@ function parseBtwArgs(args: string): ParsedBtwArgs {
 	}
 }
 
-function resolveThinking(requested: BtwThinking, current: ModelThinkingLevel, modelReasoning: boolean): ThinkingLevel | undefined {
+function resolveThinking(
+	requested: BtwThinking,
+	current: ModelThinkingLevel,
+	modelReasoning: boolean,
+): ThinkingLevel | undefined {
 	if (!modelReasoning) return undefined
 	const resolved = requested === "current" ? current : requested
 	if (resolved === "off") return undefined
 	return resolved
 }
 
-function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+function commandItems(
+	prefix: string,
+): Array<{ value: string; label: string }> | null {
 	const options = [
 		"--thinking low",
 		"--thinking medium",
@@ -135,7 +164,10 @@ function buildQuestionPrompt(question: string): string {
 	].join("\n")
 }
 
-function textFromAssistant(message: AssistantMessage | undefined, fallback: string): string {
+function textFromAssistant(
+	message: AssistantMessage | undefined,
+	fallback: string,
+): string {
 	if (!message) return fallback
 	const text = message.content
 		.filter((block): block is TextContent => block.type === "text")
@@ -145,10 +177,26 @@ function textFromAssistant(message: AssistantMessage | undefined, fallback: stri
 	return text || fallback
 }
 
-function renderWidget(theme: any, title: string, question: string, answer?: string, meta?: string): Text {
-	const lines = [theme.fg("toolTitle", theme.bold(title)), "", theme.fg("accent", "Q") + theme.fg("dim", ": ") + theme.fg("text", question)]
+function renderWidget(
+	theme: any,
+	title: string,
+	question: string,
+	answer?: string,
+	meta?: string,
+): Text {
+	const lines = [
+		theme.fg("toolTitle", theme.bold(title)),
+		"",
+		theme.fg("accent", "Q") +
+			theme.fg("dim", ": ") +
+			theme.fg("text", question),
+	]
 	if (answer !== undefined) {
-		lines.push("", theme.fg("accent", "A") + theme.fg("dim", ":"), theme.fg("text", answer))
+		lines.push(
+			"",
+			theme.fg("accent", "A") + theme.fg("dim", ":"),
+			theme.fg("text", answer),
+		)
 	}
 	if (meta) lines.push("", theme.fg("muted", meta))
 	return new Text(lines.join("\n"), 0, 0)
@@ -194,7 +242,8 @@ export default function btwExtension(pi: ExtensionAPI): void {
 	})
 
 	pi.registerCommand("btw", {
-		description: "Ask an ephemeral side question that sees current session context but is not saved. Usage: /btw [--thinking low|medium|high|current|off] <question>",
+		description:
+			"Ask an ephemeral side question that sees current session context but is not saved. Usage: /btw [--thinking low|medium|high|current|off] <question>",
 		getArgumentCompletions: commandItems,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			latestContext = ctx
@@ -206,7 +255,10 @@ export default function btwExtension(pi: ExtensionAPI): void {
 			}
 
 			if (!parsed.question) {
-				ctx.ui.notify("Usage: /btw [--thinking low|medium|high|current|off] <side question>", "info")
+				ctx.ui.notify(
+					"Usage: /btw [--thinking low|medium|high|current|off] <side question>",
+					"info",
+				)
 				return
 			}
 
@@ -223,8 +275,14 @@ export default function btwExtension(pi: ExtensionAPI): void {
 			}
 
 			const currentThinking = pi.getThinkingLevel() as ModelThinkingLevel
-			const reasoning = resolveThinking(parsed.thinking, currentThinking, Boolean(model.reasoning))
-			const thinkingLabel = model.reasoning ? (reasoning ?? "off") : "off (model does not support thinking)"
+			const reasoning = resolveThinking(
+				parsed.thinking,
+				currentThinking,
+				Boolean(model.reasoning),
+			)
+			const thinkingLabel = model.reasoning
+				? (reasoning ?? "off")
+				: "off (model does not support thinking)"
 			const questionLabel = truncate(parsed.question)
 
 			if (currentAbortController && !currentAbortController.signal.aborted) {
@@ -235,25 +293,47 @@ export default function btwExtension(pi: ExtensionAPI): void {
 			dismissedRunId = 0
 			const abortController = new AbortController()
 			currentAbortController = abortController
-			const shouldRender = () => activeRunId === runId && dismissedRunId !== runId && !abortController.signal.aborted
+			const shouldRender = () =>
+				activeRunId === runId &&
+				dismissedRunId !== runId &&
+				!abortController.signal.aborted
 
 			if (ctx.hasUI) {
-				ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("accent", `btw · ${thinkingLabel}`))
-				ctx.ui.setWidget(WIDGET_KEY, () => renderWidget(ctx.ui.theme, "BTW", questionLabel, "Thinking…", `Ephemeral · Esc clears · thinking:${thinkingLabel}`))
+				ctx.ui.setStatus(
+					STATUS_KEY,
+					ctx.ui.theme.fg("accent", `btw · ${thinkingLabel}`),
+				)
+				ctx.ui.setWidget(WIDGET_KEY, () =>
+					renderWidget(
+						ctx.ui.theme,
+						"BTW",
+						questionLabel,
+						"Thinking…",
+						`Ephemeral · Esc clears · thinking:${thinkingLabel}`,
+					),
+				)
 				setVisible(true)
 			}
 
 			try {
-				const sessionContext = buildSessionContext(ctx.sessionManager.getBranch(), ctx.sessionManager.getLeafId())
+				const sessionContext = buildSessionContext(
+					ctx.sessionManager.getBranch(),
+					ctx.sessionManager.getLeafId(),
+				)
 				const messages = convertToLlm(sessionContext.messages)
 				messages.push({
 					role: "user",
-					content: [{ type: "text", text: buildQuestionPrompt(parsed.question) }],
+					content: [
+						{ type: "text", text: buildQuestionPrompt(parsed.question) },
+					],
 					timestamp: Date.now(),
 				})
 
 				let partial = ""
-				const options: SimpleStreamOptions & { serviceTier?: string; textVerbosity?: "low" | "medium" | "high" } = {
+				const options: SimpleStreamOptions & {
+					serviceTier?: string
+					textVerbosity?: "low" | "medium" | "high"
+				} = {
 					apiKey: auth.apiKey,
 					headers: auth.headers,
 					maxTokens: parsed.maxTokens,
@@ -265,21 +345,37 @@ export default function btwExtension(pi: ExtensionAPI): void {
 				}
 
 				const fastTier = getFastServiceTier()
-				if (fastTier && (model.provider === "openai" || model.provider === "openai-codex")) {
+				if (
+					fastTier &&
+					(model.provider === "openai" ||
+						model.provider === "openai-codex")
+				) {
 					options.serviceTier = fastTier
 				}
 
-				const response = await streamSimple(model, {
-					systemPrompt: buildSystemPrompt(String(thinkingLabel)),
-					messages,
-					tools: [],
-				}, options)
+				const response = await streamSimple(
+					model,
+					{
+						systemPrompt: buildSystemPrompt(String(thinkingLabel)),
+						messages,
+						tools: [],
+					},
+					options,
+				)
 
 				for await (const event of response) {
 					if (event.type === "text_delta") {
 						partial += event.delta
 						if (ctx.hasUI && shouldRender()) {
-							ctx.ui.setWidget(WIDGET_KEY, () => renderWidget(ctx.ui.theme, "BTW", questionLabel, partial || "…", `Ephemeral · Esc clears · thinking:${thinkingLabel}`))
+							ctx.ui.setWidget(WIDGET_KEY, () =>
+								renderWidget(
+									ctx.ui.theme,
+									"BTW",
+									questionLabel,
+									partial || "…",
+									`Ephemeral · Esc clears · thinking:${thinkingLabel}`,
+								),
+							)
 							setVisible(true)
 						}
 					}
@@ -288,23 +384,49 @@ export default function btwExtension(pi: ExtensionAPI): void {
 				const finalMessage = await response.result()
 				if (!shouldRender()) return
 
-				const answer = textFromAssistant(finalMessage, partial || "No answer returned.")
+				const answer = textFromAssistant(
+					finalMessage,
+					partial || "No answer returned.",
+				)
 				const usage = finalMessage?.usage
 				const meta = usage
 					? `Ephemeral · not saved · Esc clears · thinking:${thinkingLabel} · ${usage.input}/${usage.output} in/out tokens`
 					: `Ephemeral · not saved · Esc clears · thinking:${thinkingLabel}`
 
 				if (ctx.hasUI && shouldRender()) {
-					ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("success", "btw answered · Esc clears"))
-					ctx.ui.setWidget(WIDGET_KEY, () => renderWidget(ctx.ui.theme, "BTW", questionLabel, answer, meta))
+					ctx.ui.setStatus(
+						STATUS_KEY,
+						ctx.ui.theme.fg("success", "btw answered · Esc clears"),
+					)
+					ctx.ui.setWidget(WIDGET_KEY, () =>
+						renderWidget(
+							ctx.ui.theme,
+							"BTW",
+							questionLabel,
+							answer,
+							meta,
+						),
+					)
 					setVisible(true)
 				}
 			} catch (error) {
 				if (!shouldRender()) return
-				const message = error instanceof Error ? error.message : String(error)
+				const message =
+					error instanceof Error ? error.message : String(error)
 				if (ctx.hasUI && shouldRender()) {
-					ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("error", "btw error · Esc clears"))
-					ctx.ui.setWidget(WIDGET_KEY, () => renderWidget(ctx.ui.theme, "BTW", questionLabel, `Error: ${message}`, "Ephemeral · not saved · Esc clears"))
+					ctx.ui.setStatus(
+						STATUS_KEY,
+						ctx.ui.theme.fg("error", "btw error · Esc clears"),
+					)
+					ctx.ui.setWidget(WIDGET_KEY, () =>
+						renderWidget(
+							ctx.ui.theme,
+							"BTW",
+							questionLabel,
+							`Error: ${message}`,
+							"Ephemeral · not saved · Esc clears",
+						),
+					)
 					setVisible(true)
 				}
 				ctx.ui.notify(`/btw failed: ${message}`, "error")

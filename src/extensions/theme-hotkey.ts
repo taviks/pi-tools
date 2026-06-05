@@ -18,7 +18,10 @@ export default function (pi: ExtensionAPI) {
 			if (result.success) {
 				ctx.ui.notify(`Theme: ${nextTheme}`, "info")
 			} else {
-				ctx.ui.notify(`Failed to switch theme: ${result.error ?? "unknown error"}`, "error")
+				ctx.ui.notify(
+					`Failed to switch theme: ${result.error ?? "unknown error"}`,
+					"error",
+				)
 			}
 		},
 	})

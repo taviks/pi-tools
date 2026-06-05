@@ -1,4 +1,7 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -10,12 +13,18 @@ type Settings = Record<string, unknown> & { packages?: unknown[] }
 
 type NotifyKind = "info" | "warning" | "error"
 
-function notify(ctx: ExtensionCommandContext, message: string, kind: NotifyKind = "info") {
+function notify(
+	ctx: ExtensionCommandContext,
+	message: string,
+	kind: NotifyKind = "info",
+) {
 	if (ctx.hasUI) ctx.ui.notify(message, kind)
 }
 
 function expandHome(value: string): string {
-	return value === "~" || value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value
+	return value === "~" || value.startsWith("~/")
+		? path.join(os.homedir(), value.slice(2))
+		: value
 }
 
 function normalizePathSource(value: string): string {
@@ -35,10 +44,15 @@ function getNpmPackageName(source: string): string | undefined {
 function isCanonicalAutoresearchSource(source: string): boolean {
 	if (getNpmPackageName(source) === "pi-autoresearch") return true
 	if (source === AUTORESEARCH_PACKAGE_SOURCE) return true
-	if (/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith("file:")) return false
+	if (/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith("file:"))
+		return false
 
 	const localSource = process.env.PI_AUTORESEARCH_LOCAL_SOURCE
-	return typeof localSource === "string" && localSource.length > 0 && normalizePathSource(source) === normalizePathSource(localSource)
+	return (
+		typeof localSource === "string" &&
+		localSource.length > 0 &&
+		normalizePathSource(source) === normalizePathSource(localSource)
+	)
 }
 
 function entrySource(entry: unknown): string | undefined {
@@ -57,7 +71,10 @@ function isAutoresearchEntry(entry: unknown): boolean {
 	return /(^|[/@:])pi-autoresearch($|[?#@/])/.test(source)
 }
 
-function findUp(start: string, predicate: (dir: string) => boolean): string | undefined {
+function findUp(
+	start: string,
+	predicate: (dir: string) => boolean,
+): string | undefined {
 	let dir = path.resolve(start)
 	while (true) {
 		if (predicate(dir)) return dir
@@ -70,7 +87,9 @@ function findUp(start: string, predicate: (dir: string) => boolean): string | un
 function findProjectRoot(cwd: string, args: string): string {
 	if (/\b(here|--here|--cwd)\b/.test(args)) return path.resolve(cwd)
 
-	const existingPiSettings = findUp(cwd, (dir) => fs.existsSync(path.join(dir, ".pi", "settings.json")))
+	const existingPiSettings = findUp(cwd, (dir) =>
+		fs.existsSync(path.join(dir, ".pi", "settings.json")),
+	)
 	if (existingPiSettings) return existingPiSettings
 
 	const gitRoot = findUp(cwd, (dir) => fs.existsSync(path.join(dir, ".git")))
@@ -97,42 +116,73 @@ function writeSettings(settingsPath: string, settings: Settings) {
 	fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`)
 }
 
-async function reloadAfterChange(ctx: ExtensionCommandContext, message: string) {
+async function reloadAfterChange(
+	ctx: ExtensionCommandContext,
+	message: string,
+) {
 	notify(ctx, `${message} Reloading Pi…`, "info")
 	await ctx.reload()
 }
 
 export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
-		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-enable", () => null)
-		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-disable", () => null)
-		installSlashCommandArgumentAutocomplete(ctx, "autoresearch-status", () => null)
+		installSlashCommandArgumentAutocomplete(
+			ctx,
+			"autoresearch-enable",
+			() => null,
+		)
+		installSlashCommandArgumentAutocomplete(
+			ctx,
+			"autoresearch-disable",
+			() => null,
+		)
+		installSlashCommandArgumentAutocomplete(
+			ctx,
+			"autoresearch-status",
+			() => null,
+		)
 	})
 
 	pi.registerCommand("autoresearch-enable", {
-		description: "Enable the official pi-autoresearch package for this project and reload",
+		description:
+			"Enable the official pi-autoresearch package for this project and reload",
 		handler: async (args, ctx) => {
 			try {
 				const root = findProjectRoot(ctx.cwd, args)
 				const settingsPath = settingsPathForRoot(root)
 				const settings = readSettings(settingsPath)
 				const packages = settings.packages ?? []
-				const autoresearchEntries = packages.filter((entry) => isAutoresearchEntry(entry))
-				const withoutAutoresearch = packages.filter((entry) => !isAutoresearchEntry(entry))
+				const autoresearchEntries = packages.filter((entry) =>
+					isAutoresearchEntry(entry),
+				)
+				const withoutAutoresearch = packages.filter(
+					(entry) => !isAutoresearchEntry(entry),
+				)
 				const alreadyEnabled =
 					autoresearchEntries.length === 1 &&
-					entrySource(autoresearchEntries[0]) === AUTORESEARCH_PACKAGE_SOURCE
+					entrySource(autoresearchEntries[0]) ===
+						AUTORESEARCH_PACKAGE_SOURCE
 
 				if (alreadyEnabled) {
 					notify(ctx, `Autoresearch already enabled for ${root}.`, "info")
 					return
 				}
 
-				settings.packages = [...withoutAutoresearch, AUTORESEARCH_PACKAGE_SOURCE]
+				settings.packages = [
+					...withoutAutoresearch,
+					AUTORESEARCH_PACKAGE_SOURCE,
+				]
 				writeSettings(settingsPath, settings)
-				await reloadAfterChange(ctx, `Autoresearch enabled for ${root}. Use /autoresearch after reload.`)
+				await reloadAfterChange(
+					ctx,
+					`Autoresearch enabled for ${root}. Use /autoresearch after reload.`,
+				)
 			} catch (error) {
-				notify(ctx, error instanceof Error ? error.message : String(error), "error")
+				notify(
+					ctx,
+					error instanceof Error ? error.message : String(error),
+					"error",
+				)
 			}
 		},
 	})
@@ -145,7 +195,9 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 				const settingsPath = settingsPathForRoot(root)
 				const settings = readSettings(settingsPath)
 				const packages = settings.packages ?? []
-				const withoutAutoresearch = packages.filter((entry) => !isAutoresearchEntry(entry))
+				const withoutAutoresearch = packages.filter(
+					(entry) => !isAutoresearchEntry(entry),
+				)
 
 				if (withoutAutoresearch.length === packages.length) {
 					notify(ctx, `Autoresearch is not enabled for ${root}.`, "info")
@@ -154,9 +206,16 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 
 				settings.packages = withoutAutoresearch
 				writeSettings(settingsPath, settings)
-				await reloadAfterChange(ctx, `Autoresearch disabled for ${root}. Existing autoresearch files were left untouched.`)
+				await reloadAfterChange(
+					ctx,
+					`Autoresearch disabled for ${root}. Existing autoresearch files were left untouched.`,
+				)
 			} catch (error) {
-				notify(ctx, error instanceof Error ? error.message : String(error), "error")
+				notify(
+					ctx,
+					error instanceof Error ? error.message : String(error),
+					"error",
+				)
 			}
 		},
 	})
@@ -168,10 +227,20 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 				const root = findProjectRoot(ctx.cwd, args)
 				const settingsPath = settingsPathForRoot(root)
 				const settings = readSettings(settingsPath)
-				const enabled = (settings.packages ?? []).some((entry) => isAutoresearchEntry(entry))
-				notify(ctx, `Autoresearch is ${enabled ? "enabled" : "disabled"} for ${root}.`, "info")
+				const enabled = (settings.packages ?? []).some((entry) =>
+					isAutoresearchEntry(entry),
+				)
+				notify(
+					ctx,
+					`Autoresearch is ${enabled ? "enabled" : "disabled"} for ${root}.`,
+					"info",
+				)
 			} catch (error) {
-				notify(ctx, error instanceof Error ? error.message : String(error), "error")
+				notify(
+					ctx,
+					error instanceof Error ? error.message : String(error),
+					"error",
+				)
 			}
 		},
 	})

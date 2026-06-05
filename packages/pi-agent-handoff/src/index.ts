@@ -4,14 +4,34 @@ import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { StringEnum } from "@earendil-works/pi-ai"
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 
 const DEFAULT_REVIEW_INSTRUCTIONS =
 	"Review this implementation plan for correctness, risks, missing steps, sequencing issues, overengineering, and unclear assumptions. Be concrete and actionable."
 const WORKSPACE_ID_RELATIVE_PATH = path.join(".pi", "workspace-id")
-const STANDARD_DIRS = ["tasks", "plans", "reviews", "decisions", "runs", "logs", "archive"] as const
-const ARTIFACT_KINDS = ["task", "plan", "review", "decision", "run", "log", "archive"] as const
+const STANDARD_DIRS = [
+	"tasks",
+	"plans",
+	"reviews",
+	"decisions",
+	"runs",
+	"logs",
+	"archive",
+] as const
+const ARTIFACT_KINDS = [
+	"task",
+	"plan",
+	"review",
+	"decision",
+	"run",
+	"log",
+	"archive",
+] as const
 type ArtifactKind = (typeof ARTIFACT_KINDS)[number]
 type NotifyKind = "info" | "warning" | "error"
 
@@ -49,16 +69,27 @@ interface ClaudeReviewResult {
 	exitCode: number | null
 }
 
-function notify(ctx: ExtensionCommandContext | ExtensionContext, message: string, kind: NotifyKind = "info") {
+function notify(
+	ctx: ExtensionCommandContext | ExtensionContext,
+	message: string,
+	kind: NotifyKind = "info",
+) {
 	if (ctx.hasUI) ctx.ui.notify(message, kind)
 }
 
 function expandHome(value: string): string {
-	return value === "~" || value.startsWith("~/") ? path.join(os.homedir(), value.slice(2)) : value
+	return value === "~" || value.startsWith("~/")
+		? path.join(os.homedir(), value.slice(2))
+		: value
 }
 
 function getHandoffHome(): string {
-	return path.resolve(expandHome(process.env.AGENT_HANDOFF_HOME || path.join(os.homedir(), ".agent-handoff")))
+	return path.resolve(
+		expandHome(
+			process.env.AGENT_HANDOFF_HOME ||
+				path.join(os.homedir(), ".agent-handoff"),
+		),
+	)
 }
 
 function canonicalDir(dir: string): string {
@@ -67,7 +98,11 @@ function canonicalDir(dir: string): string {
 
 function tryFindGitRoot(cwd: string): string | undefined {
 	try {
-		const result = spawnSyncText("git", ["-C", cwd, "rev-parse", "--show-toplevel"], 5000)
+		const result = spawnSyncText(
+			"git",
+			["-C", cwd, "rev-parse", "--show-toplevel"],
+			5000,
+		)
 		if (result.exitCode === 0) {
 			const root = result.stdout.trim()
 			if (root) return canonicalDir(root)
@@ -81,7 +116,8 @@ function tryFindGitRoot(cwd: string): string | undefined {
 function findWorkspaceAncestor(cwd: string): string | undefined {
 	let current = canonicalDir(cwd)
 	while (true) {
-		if (fs.existsSync(path.join(current, WORKSPACE_ID_RELATIVE_PATH))) return current
+		if (fs.existsSync(path.join(current, WORKSPACE_ID_RELATIVE_PATH)))
+			return current
 		const parent = path.dirname(current)
 		if (parent === current) return undefined
 		current = parent
@@ -125,7 +161,8 @@ function getWorkspaceInfo(cwd: string): WorkspaceInfo {
 
 function ensureHandoffWorkspace(info: WorkspaceInfo): void {
 	fs.mkdirSync(info.handoffDir, { recursive: true })
-	for (const dir of STANDARD_DIRS) fs.mkdirSync(path.join(info.handoffDir, dir), { recursive: true })
+	for (const dir of STANDARD_DIRS)
+		fs.mkdirSync(path.join(info.handoffDir, dir), { recursive: true })
 	const workspaceJson = {
 		workspace_id: info.workspaceId,
 		workspace_root: info.workspaceRoot,
@@ -134,7 +171,10 @@ function ensureHandoffWorkspace(info: WorkspaceInfo): void {
 		handoff_dir: info.handoffDir,
 		updated_at: new Date().toISOString(),
 	}
-	fs.writeFileSync(path.join(info.handoffDir, "workspace.json"), `${JSON.stringify(workspaceJson, null, 2)}\n`)
+	fs.writeFileSync(
+		path.join(info.handoffDir, "workspace.json"),
+		`${JSON.stringify(workspaceJson, null, 2)}\n`,
+	)
 }
 
 function dirForKind(kind: ArtifactKind): string {
@@ -159,7 +199,9 @@ function dirForKind(kind: ArtifactKind): string {
 function parseKind(value: string | undefined): ArtifactKind | undefined {
 	if (!value) return undefined
 	const normalized = value.toLowerCase().replace(/s$/, "") as ArtifactKind
-	return (ARTIFACT_KINDS as readonly string[]).includes(normalized) ? normalized : undefined
+	return (ARTIFACT_KINDS as readonly string[]).includes(normalized)
+		? normalized
+		: undefined
 }
 
 function slugify(value: string): string {
@@ -176,13 +218,23 @@ function slugify(value: string): string {
 function assertSafeFilename(filename: string): string {
 	const trimmed = filename.trim()
 	if (!trimmed) throw new Error("A filename is required.")
-	if (trimmed.includes("/") || trimmed.includes("\\") || trimmed === "." || trimmed === ".." || trimmed.includes("..")) {
+	if (
+		trimmed.includes("/") ||
+		trimmed.includes("\\") ||
+		trimmed === "." ||
+		trimmed === ".." ||
+		trimmed.includes("..")
+	) {
 		throw new Error(`Unsafe artifact filename: ${filename}`)
 	}
 	return trimmed
 }
 
-function filenameFor(kind: ArtifactKind, slugInput: string, authorOrReviewer = "pi"): string {
+function filenameFor(
+	kind: ArtifactKind,
+	slugInput: string,
+	authorOrReviewer = "pi",
+): string {
 	const slug = slugify(slugInput)
 	const suffix = slugify(authorOrReviewer)
 	if (kind === "task") return `${slug}.task.md`
@@ -194,8 +246,16 @@ function filenameFor(kind: ArtifactKind, slugInput: string, authorOrReviewer = "
 	return `${slug}.archive.md`
 }
 
-function artifactPath(info: WorkspaceInfo, kind: ArtifactKind, filename: string): string {
-	return path.join(info.handoffDir, dirForKind(kind), assertSafeFilename(filename))
+function artifactPath(
+	info: WorkspaceInfo,
+	kind: ArtifactKind,
+	filename: string,
+): string {
+	return path.join(
+		info.handoffDir,
+		dirForKind(kind),
+		assertSafeFilename(filename),
+	)
 }
 
 function uniquePath(filePath: string): string {
@@ -203,7 +263,10 @@ function uniquePath(filePath: string): string {
 	const dir = path.dirname(filePath)
 	const ext = path.extname(filePath)
 	const base = path.basename(filePath, ext)
-	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")
+	const stamp = new Date()
+		.toISOString()
+		.replace(/[-:]/g, "")
+		.replace(/\.\d{3}Z$/, "Z")
 	let candidate = path.join(dir, `${base}.${stamp}${ext}`)
 	let i = 2
 	while (fs.existsSync(candidate)) {
@@ -213,7 +276,12 @@ function uniquePath(filePath: string): string {
 	return candidate
 }
 
-function frontmatter(type: string, info: WorkspaceInfo, slug: string, extra: Record<string, string> = {}): string {
+function frontmatter(
+	type: string,
+	info: WorkspaceInfo,
+	slug: string,
+	extra: Record<string, string> = {},
+): string {
 	const lines = [
 		"---",
 		`artifact_type: ${type}`,
@@ -222,35 +290,64 @@ function frontmatter(type: string, info: WorkspaceInfo, slug: string, extra: Rec
 		`workspace_root: ${info.workspaceRoot}`,
 		`created_at: ${new Date().toISOString()}`,
 	]
-	for (const [key, value] of Object.entries(extra)) lines.push(`${key}: ${value}`)
+	for (const [key, value] of Object.entries(extra))
+		lines.push(`${key}: ${value}`)
 	lines.push("---", "")
 	return lines.join("\n")
 }
 
-function taskTemplate(info: WorkspaceInfo, slugInput: string, title?: string): string {
+function taskTemplate(
+	info: WorkspaceInfo,
+	slugInput: string,
+	title?: string,
+): string {
 	const slug = slugify(slugInput)
 	return `${frontmatter("task", info, slug, { status: "draft" })}# Task: ${title?.trim() || slug}\n\n## Goal\n\n\n## Context\n\n\n## Constraints\n\n\n## Desired output\n\n\n`
 }
 
-function planTemplate(info: WorkspaceInfo, slugInput: string, title?: string): string {
+function planTemplate(
+	info: WorkspaceInfo,
+	slugInput: string,
+	title?: string,
+): string {
 	const slug = slugify(slugInput)
 	return `${frontmatter("plan", info, slug, { author: "pi", status: "draft" })}# Plan: ${title?.trim() || slug}\n\n## Goal\n\n\n## Proposed steps\n\n1. \n\n## Files / areas likely involved\n\n\n## Risks / unknowns\n\n\n## Review request\n\nPlease check this plan for correctness, sequencing, missing steps, and overengineering.\n`
 }
 
-function decisionTemplate(info: WorkspaceInfo, slugInput: string, title?: string): string {
+function decisionTemplate(
+	info: WorkspaceInfo,
+	slugInput: string,
+	title?: string,
+): string {
 	const slug = slugify(slugInput)
 	return `${frontmatter("decision", info, slug, { status: "draft" })}# Decision: ${title?.trim() || slug}\n\n## Chosen direction\n\n\n## Why\n\n\n## Inputs considered\n\n\n## Follow-ups\n\n\n`
 }
 
 function writeNewArtifact(filePath: string, content: string): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true })
-	if (fs.existsSync(filePath)) throw new Error(`Artifact already exists: ${filePath}`)
+	if (fs.existsSync(filePath))
+		throw new Error(`Artifact already exists: ${filePath}`)
 	fs.writeFileSync(filePath, content)
 }
 
-function listArtifacts(info: WorkspaceInfo, kind?: ArtifactKind): Array<{ kind: ArtifactKind; filename: string; path: string; mtimeMs: number; size: number }> {
+function listArtifacts(
+	info: WorkspaceInfo,
+	kind?: ArtifactKind,
+): Array<{
+	kind: ArtifactKind
+	filename: string
+	path: string
+	mtimeMs: number
+	size: number
+}> {
 	const kinds = kind ? [kind] : [...ARTIFACT_KINDS]
-	const results: Array<{ kind: ArtifactKind; filename: string; path: string; mtimeMs: number; size: number }> = []
+	const results: Array<{
+		kind: ArtifactKind
+		filename: string
+		path: string
+		mtimeMs: number
+		size: number
+	}> = []
 	for (const k of kinds) {
 		const dir = path.join(info.handoffDir, dirForKind(k))
 		if (!fs.existsSync(dir)) continue
@@ -258,17 +355,27 @@ function listArtifacts(info: WorkspaceInfo, kind?: ArtifactKind): Array<{ kind: 
 			if (!entry.isFile()) continue
 			const filePath = path.join(dir, entry.name)
 			const stat = fs.statSync(filePath)
-			results.push({ kind: k, filename: entry.name, path: filePath, mtimeMs: stat.mtimeMs, size: stat.size })
+			results.push({
+				kind: k,
+				filename: entry.name,
+				path: filePath,
+				mtimeMs: stat.mtimeMs,
+				size: stat.size,
+			})
 		}
 	}
 	return results.sort((a, b) => b.mtimeMs - a.mtimeMs)
 }
 
-function formatArtifactList(items: ReturnType<typeof listArtifacts>, max = 40): string {
+function formatArtifactList(
+	items: ReturnType<typeof listArtifacts>,
+	max = 40,
+): string {
 	if (items.length === 0) return "No handoff artifacts found."
 	const shown = items.slice(0, max)
 	const lines = shown.map((item) => `- ${item.kind}: ${item.filename}`)
-	if (items.length > shown.length) lines.push(`...and ${items.length - shown.length} more.`)
+	if (items.length > shown.length)
+		lines.push(`...and ${items.length - shown.length} more.`)
 	return lines.join("\n")
 }
 
@@ -283,19 +390,26 @@ function resolvePlanPath(info: WorkspaceInfo, input: string): string {
 		path.resolve(path.join(info.handoffDir, "plans"), raw),
 	].filter(Boolean) as string[]
 	for (const candidate of absoluteCandidates) {
-		if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate
+		if (fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+			return candidate
 	}
 
 	const slug = slugify(raw.replace(/\.md$/i, ""))
 	const plansDir = path.join(info.handoffDir, "plans")
-	if (!fs.existsSync(plansDir)) throw new Error(`No plans directory found: ${plansDir}`)
+	if (!fs.existsSync(plansDir))
+		throw new Error(`No plans directory found: ${plansDir}`)
 	const matches = fs
 		.readdirSync(plansDir, { withFileTypes: true })
 		.filter((entry) => entry.isFile())
 		.map((entry) => path.join(plansDir, entry.name))
-		.filter((candidate) => path.basename(candidate).startsWith(`${slug}.plan`) || path.basename(candidate) === `${slug}.md`)
+		.filter(
+			(candidate) =>
+				path.basename(candidate).startsWith(`${slug}.plan`) ||
+				path.basename(candidate) === `${slug}.md`,
+		)
 		.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
-	if (matches.length === 0) throw new Error(`No plan artifact found for '${input}'.`)
+	if (matches.length === 0)
+		throw new Error(`No plan artifact found for '${input}'.`)
 	return matches[0]
 }
 
@@ -304,7 +418,12 @@ function slugFromPlanPath(planPath: string): string {
 	return slugify(base.split(/\.plan\./)[0] || base)
 }
 
-function createReviewRequest(info: WorkspaceInfo, planInput: string, reviewer = "claude", instructions = DEFAULT_REVIEW_INSTRUCTIONS): { path: string; content: string; planPath: string; slug: string } {
+function createReviewRequest(
+	info: WorkspaceInfo,
+	planInput: string,
+	reviewer = "claude",
+	instructions = DEFAULT_REVIEW_INSTRUCTIONS,
+): { path: string; content: string; planPath: string; slug: string } {
 	ensureHandoffWorkspace(info)
 	const planPath = resolvePlanPath(info, planInput)
 	const slug = slugFromPlanPath(planPath)
@@ -313,24 +432,47 @@ function createReviewRequest(info: WorkspaceInfo, planInput: string, reviewer = 
 		reviewer: reviewerSlug,
 		plan_path: planPath,
 	})}# Review request: ${slug}\n\n## Instructions\n\n${instructions.trim() || DEFAULT_REVIEW_INSTRUCTIONS}\n\n## Plan path\n\n${planPath}\n\n## Plan\n\n${fs.readFileSync(planPath, "utf8")}\n`
-	const filePath = uniquePath(path.join(info.handoffDir, "tasks", `${slug}.review-request.${reviewerSlug}.md`))
+	const filePath = uniquePath(
+		path.join(
+			info.handoffDir,
+			"tasks",
+			`${slug}.review-request.${reviewerSlug}.md`,
+		),
+	)
 	fs.writeFileSync(filePath, content)
 	return { path: filePath, content, planPath, slug }
 }
 
-function spawnSyncText(command: string, args: string[], timeoutMs: number): { stdout: string; stderr: string; exitCode: number | null } {
+function spawnSyncText(
+	command: string,
+	args: string[],
+	timeoutMs: number,
+): { stdout: string; stderr: string; exitCode: number | null } {
 	const child = spawnSync(command, args, {
 		encoding: "utf8",
 		timeout: timeoutMs,
 		maxBuffer: 1024 * 1024 * 16,
 	})
 	if (child.error) throw child.error
-	return { stdout: child.stdout || "", stderr: child.stderr || "", exitCode: child.status }
+	return {
+		stdout: child.stdout || "",
+		stderr: child.stderr || "",
+		exitCode: child.status,
+	}
 }
 
-function runProcessWithInput(command: string, args: string[], input: string, cwd: string, timeoutSeconds: number): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+function runProcessWithInput(
+	command: string,
+	args: string[],
+	input: string,
+	cwd: string,
+	timeoutSeconds: number,
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"] })
+		const child = spawn(command, args, {
+			cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+		})
 		let stdout = ""
 		let stderr = ""
 		let settled = false
@@ -366,12 +508,16 @@ function runProcessWithInput(command: string, args: string[], input: string, cwd
 	})
 }
 
-async function runClaudeReview(info: WorkspaceInfo, options: ClaudeReviewOptions): Promise<ClaudeReviewResult> {
+async function runClaudeReview(
+	info: WorkspaceInfo,
+	options: ClaudeReviewOptions,
+): Promise<ClaudeReviewResult> {
 	ensureHandoffWorkspace(info)
 	const planPath = resolvePlanPath(info, options.plan)
 	const slug = slugify(options.slug || slugFromPlanPath(planPath))
 	const model = options.model || "opus"
-	const instructions = options.instructions?.trim() || DEFAULT_REVIEW_INSTRUCTIONS
+	const instructions =
+		options.instructions?.trim() || DEFAULT_REVIEW_INSTRUCTIONS
 	const plan = fs.readFileSync(planPath, "utf8")
 	const prompt = `${instructions}\n\nPlan path: ${planPath}\n\n--- PLAN START ---\n${plan}\n--- PLAN END ---\n`
 	const result = await runProcessWithInput(
@@ -381,7 +527,13 @@ async function runClaudeReview(info: WorkspaceInfo, options: ClaudeReviewOptions
 		info.workspaceRoot,
 		options.timeoutSeconds ?? 1200,
 	)
-	const reviewPath = uniquePath(path.join(info.handoffDir, "reviews", filenameFor("review", slug, "claude")))
+	const reviewPath = uniquePath(
+		path.join(
+			info.handoffDir,
+			"reviews",
+			filenameFor("review", slug, "claude"),
+		),
+	)
 	const content = `${frontmatter("review", info, slug, {
 		reviewer: "claude",
 		model,
@@ -389,11 +541,24 @@ async function runClaudeReview(info: WorkspaceInfo, options: ClaudeReviewOptions
 		exit_code: String(result.exitCode ?? "null"),
 	})}${result.stdout.trimEnd()}\n${result.stderr.trim() ? `\n## stderr\n\n\`\`\`\n${result.stderr.trimEnd()}\n\`\`\`\n` : ""}`
 	fs.writeFileSync(reviewPath, content)
-	return { planPath, reviewPath, model, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }
+	return {
+		planPath,
+		reviewPath,
+		model,
+		stdout: result.stdout,
+		stderr: result.stderr,
+		exitCode: result.exitCode,
+	}
 }
 
-function parseCommandArgs(input: string): { flags: Map<string, string | boolean>; positionals: string[] } {
-	const tokens = input.match(/(?:"[^"]*"|'[^']*'|\S+)/g)?.map((token) => token.replace(/^(["'])(.*)\1$/, "$2")) ?? []
+function parseCommandArgs(input: string): {
+	flags: Map<string, string | boolean>
+	positionals: string[]
+} {
+	const tokens =
+		input
+			.match(/(?:"[^"]*"|'[^']*'|\S+)/g)
+			?.map((token) => token.replace(/^(["'])(.*)\1$/, "$2")) ?? []
 	const flags = new Map<string, string | boolean>()
 	const positionals: string[] = []
 	for (let i = 0; i < tokens.length; i++) {
@@ -427,25 +592,87 @@ function usage(): string {
 }
 
 const HandoffParams = Type.Object({
-	action: StringEnum(["get_dir", "init", "list", "read", "write", "review_request", "run_claude_review"] as const, {
-		description: "Handoff action to perform.",
-	}),
+	action: StringEnum(
+		[
+			"get_dir",
+			"init",
+			"list",
+			"read",
+			"write",
+			"review_request",
+			"run_claude_review",
+		] as const,
+		{
+			description: "Handoff action to perform.",
+		},
+	),
 	kind: Type.Optional(
-		StringEnum(["task", "plan", "review", "decision", "run", "log", "archive"] as const, {
-			description: "Artifact kind for list/read/write.",
+		StringEnum(
+			[
+				"task",
+				"plan",
+				"review",
+				"decision",
+				"run",
+				"log",
+				"archive",
+			] as const,
+			{
+				description: "Artifact kind for list/read/write.",
+			},
+		),
+	),
+	filename: Type.Optional(
+		Type.String({
+			description:
+				"Safe artifact filename for read/write, e.g. foo.plan.pi.md.",
 		}),
 	),
-	filename: Type.Optional(Type.String({ description: "Safe artifact filename for read/write, e.g. foo.plan.pi.md." })),
-	slug: Type.Optional(Type.String({ description: "Artifact slug, e.g. auth-refactor." })),
-	title: Type.Optional(Type.String({ description: "Optional title for templated artifacts." })),
-	content: Type.Optional(Type.String({ description: "Artifact content for write." })),
-	append: Type.Optional(Type.Boolean({ description: "Append instead of overwriting when action=write." })),
-	plan: Type.Optional(Type.String({ description: "Plan slug, filename, relative path, or absolute path for review actions." })),
-	reviewer: Type.Optional(Type.String({ description: "Reviewer id for review_request. Default: claude." })),
-	instructions: Type.Optional(Type.String({ description: "Review instructions." })),
-	model: Type.Optional(Type.String({ description: "Claude Code model alias/full name for run_claude_review. Default: opus." })),
-	confirm: Type.Optional(Type.Boolean({ description: "For run_claude_review, ask for UI confirmation unless false." })),
-	timeoutSeconds: Type.Optional(Type.Number({ description: "Timeout for run_claude_review. Default: 1200." })),
+	slug: Type.Optional(
+		Type.String({ description: "Artifact slug, e.g. auth-refactor." }),
+	),
+	title: Type.Optional(
+		Type.String({ description: "Optional title for templated artifacts." }),
+	),
+	content: Type.Optional(
+		Type.String({ description: "Artifact content for write." }),
+	),
+	append: Type.Optional(
+		Type.Boolean({
+			description: "Append instead of overwriting when action=write.",
+		}),
+	),
+	plan: Type.Optional(
+		Type.String({
+			description:
+				"Plan slug, filename, relative path, or absolute path for review actions.",
+		}),
+	),
+	reviewer: Type.Optional(
+		Type.String({
+			description: "Reviewer id for review_request. Default: claude.",
+		}),
+	),
+	instructions: Type.Optional(
+		Type.String({ description: "Review instructions." }),
+	),
+	model: Type.Optional(
+		Type.String({
+			description:
+				"Claude Code model alias/full name for run_claude_review. Default: opus.",
+		}),
+	),
+	confirm: Type.Optional(
+		Type.Boolean({
+			description:
+				"For run_claude_review, ask for UI confirmation unless false.",
+		}),
+	),
+	timeoutSeconds: Type.Optional(
+		Type.Number({
+			description: "Timeout for run_claude_review. Default: 1200.",
+		}),
+	),
 })
 
 type HandoffParamsType = {
@@ -466,7 +693,8 @@ type HandoffParamsType = {
 
 export default function agentHandoffExtension(pi: ExtensionAPI) {
 	pi.registerCommand("handoff", {
-		description: "Manage cross-harness agent handoff artifacts. Usage: /handoff [init|dir|info|list|new|plan|decision|review-request|claude-review]",
+		description:
+			"Manage cross-harness agent handoff artifacts. Usage: /handoff [init|dir|info|list|new|plan|decision|review-request|claude-review]",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const info = getWorkspaceInfo(ctx.cwd)
 			const { flags, positionals } = parseCommandArgs(args.trim())
@@ -474,13 +702,21 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 
 			try {
 				if (!command || command === "help") {
-					notify(ctx, `${usage()}\n\nHandoff dir: ${info.handoffDir}`, "info")
+					notify(
+						ctx,
+						`${usage()}\n\nHandoff dir: ${info.handoffDir}`,
+						"info",
+					)
 					return
 				}
 
 				if (command === "init") {
 					ensureHandoffWorkspace(info)
-					notify(ctx, `Initialized handoff workspace:\n${info.handoffDir}`, "info")
+					notify(
+						ctx,
+						`Initialized handoff workspace:\n${info.handoffDir}`,
+						"info",
+					)
 					return
 				}
 
@@ -508,7 +744,11 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 				if (command === "list" || command === "status") {
 					ensureHandoffWorkspace(info)
 					const kind = parseKind(positionals[0])
-					notify(ctx, formatArtifactList(listArtifacts(info, kind)), "info")
+					notify(
+						ctx,
+						formatArtifactList(listArtifacts(info, kind)),
+						"info",
+					)
 					return
 				}
 
@@ -516,8 +756,15 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 					ensureHandoffWorkspace(info)
 					const slug = positionals.shift()
 					if (!slug) throw new Error("Usage: /handoff new <slug> [title]")
-					const filePath = artifactPath(info, "task", filenameFor("task", slug))
-					writeNewArtifact(filePath, taskTemplate(info, slug, positionals.join(" ")))
+					const filePath = artifactPath(
+						info,
+						"task",
+						filenameFor("task", slug),
+					)
+					writeNewArtifact(
+						filePath,
+						taskTemplate(info, slug, positionals.join(" ")),
+					)
 					notify(ctx, `Created task artifact:\n${filePath}`, "info")
 					return
 				}
@@ -526,8 +773,15 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 					ensureHandoffWorkspace(info)
 					const slug = positionals.shift()
 					if (!slug) throw new Error("Usage: /handoff plan <slug> [title]")
-					const filePath = artifactPath(info, "plan", filenameFor("plan", slug, "pi"))
-					writeNewArtifact(filePath, planTemplate(info, slug, positionals.join(" ")))
+					const filePath = artifactPath(
+						info,
+						"plan",
+						filenameFor("plan", slug, "pi"),
+					)
+					writeNewArtifact(
+						filePath,
+						planTemplate(info, slug, positionals.join(" ")),
+					)
 					notify(ctx, `Created plan artifact:\n${filePath}`, "info")
 					return
 				}
@@ -535,27 +789,54 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 				if (command === "decision") {
 					ensureHandoffWorkspace(info)
 					const slug = positionals.shift()
-					if (!slug) throw new Error("Usage: /handoff decision <slug> [title]")
-					const filePath = artifactPath(info, "decision", filenameFor("decision", slug))
-					writeNewArtifact(filePath, decisionTemplate(info, slug, positionals.join(" ")))
+					if (!slug)
+						throw new Error("Usage: /handoff decision <slug> [title]")
+					const filePath = artifactPath(
+						info,
+						"decision",
+						filenameFor("decision", slug),
+					)
+					writeNewArtifact(
+						filePath,
+						decisionTemplate(info, slug, positionals.join(" ")),
+					)
 					notify(ctx, `Created decision artifact:\n${filePath}`, "info")
 					return
 				}
 
 				if (command === "review-request") {
 					const plan = positionals.shift()
-					if (!plan) throw new Error("Usage: /handoff review-request <slug-or-plan> [reviewer] [instructions...]")
+					if (!plan)
+						throw new Error(
+							"Usage: /handoff review-request <slug-or-plan> [reviewer] [instructions...]",
+						)
 					const reviewer = positionals.shift() || "claude"
-					const result = createReviewRequest(info, plan, reviewer, positionals.join(" ") || DEFAULT_REVIEW_INSTRUCTIONS)
-					notify(ctx, `Created review request:\n${result.path}\n\nPlan: ${result.planPath}`, "info")
+					const result = createReviewRequest(
+						info,
+						plan,
+						reviewer,
+						positionals.join(" ") || DEFAULT_REVIEW_INSTRUCTIONS,
+					)
+					notify(
+						ctx,
+						`Created review request:\n${result.path}\n\nPlan: ${result.planPath}`,
+						"info",
+					)
 					return
 				}
 
 				if (command === "claude-review") {
 					const plan = positionals.shift()
-					if (!plan) throw new Error("Usage: /handoff claude-review [--yes] [--model opus] <slug-or-plan> [instructions...]")
-					const model = typeof flags.get("model") === "string" ? String(flags.get("model")) : "opus"
-					const instructions = positionals.join(" ") || DEFAULT_REVIEW_INSTRUCTIONS
+					if (!plan)
+						throw new Error(
+							"Usage: /handoff claude-review [--yes] [--model opus] <slug-or-plan> [instructions...]",
+						)
+					const model =
+						typeof flags.get("model") === "string"
+							? String(flags.get("model"))
+							: "opus"
+					const instructions =
+						positionals.join(" ") || DEFAULT_REVIEW_INSTRUCTIONS
 					const planPath = resolvePlanPath(info, plan)
 					if (!flags.get("yes")) {
 						const ok = await ctx.ui.confirm(
@@ -567,19 +848,41 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 							return
 						}
 					}
-					notify(ctx, `Running Claude Code review with ${model}...`, "info")
-					const result = await runClaudeReview(info, { plan: planPath, model, instructions })
+					notify(
+						ctx,
+						`Running Claude Code review with ${model}...`,
+						"info",
+					)
+					const result = await runClaudeReview(info, {
+						plan: planPath,
+						model,
+						instructions,
+					})
 					if (result.exitCode === 0) {
-						notify(ctx, `Claude review written:\n${result.reviewPath}`, "info")
+						notify(
+							ctx,
+							`Claude review written:\n${result.reviewPath}`,
+							"info",
+						)
 					} else {
-						notify(ctx, `Claude review exited with ${result.exitCode}; output written:\n${result.reviewPath}`, "warning")
+						notify(
+							ctx,
+							`Claude review exited with ${result.exitCode}; output written:\n${result.reviewPath}`,
+							"warning",
+						)
 					}
 					return
 				}
 
-				throw new Error(`Unknown /handoff command: ${command}\n\n${usage()}`)
+				throw new Error(
+					`Unknown /handoff command: ${command}\n\n${usage()}`,
+				)
 			} catch (error) {
-				notify(ctx, error instanceof Error ? error.message : String(error), "error")
+				notify(
+					ctx,
+					error instanceof Error ? error.message : String(error),
+					"error",
+				)
 			}
 		},
 	})
@@ -587,21 +890,31 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "handoff",
 		label: "Handoff",
-		description: "Manage system-level cross-harness agent handoff artifacts and optionally run Claude Code headless reviews.",
-		promptSnippet: "Create/read/list handoff artifacts in ~/.agent-handoff/workspaces/<workspace-id> and prepare or run external reviews.",
+		description:
+			"Manage system-level cross-harness agent handoff artifacts and optionally run Claude Code headless reviews.",
+		promptSnippet:
+			"Create/read/list handoff artifacts in ~/.agent-handoff/workspaces/<workspace-id> and prepare or run external reviews.",
 		promptGuidelines: [
 			"Use handoff for cross-harness artifacts when the user asks to create plans, review requests, decisions, or agent handoffs that should survive outside the chat session.",
 			"Only use handoff action run_claude_review when the user explicitly asks to run Claude Code or an external Claude review; otherwise create a review_request instead.",
 		],
 		parameters: HandoffParams,
-		async execute(_toolCallId, params: HandoffParamsType, _signal, _onUpdate, ctx) {
+		async execute(
+			_toolCallId,
+			params: HandoffParamsType,
+			_signal,
+			_onUpdate,
+			ctx,
+		) {
 			const info = getWorkspaceInfo(ctx.cwd)
 			const action = params.action
 
 			if (action === "get_dir") {
 				fs.mkdirSync(info.handoffDir, { recursive: true })
 				return {
-					content: [{ type: "text", text: `Handoff dir: ${info.handoffDir}` }],
+					content: [
+						{ type: "text", text: `Handoff dir: ${info.handoffDir}` },
+					],
 					details: { ...info },
 				}
 			}
@@ -609,7 +922,12 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 			if (action === "init") {
 				ensureHandoffWorkspace(info)
 				return {
-					content: [{ type: "text", text: `Initialized handoff workspace: ${info.handoffDir}` }],
+					content: [
+						{
+							type: "text",
+							text: `Initialized handoff workspace: ${info.handoffDir}`,
+						},
+					],
 					details: { ...info, dirs: STANDARD_DIRS },
 				}
 			}
@@ -624,51 +942,101 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 			}
 
 			if (action === "read") {
-				if (!params.kind || !params.filename) throw new Error("handoff read requires kind and filename.")
+				if (!params.kind || !params.filename)
+					throw new Error("handoff read requires kind and filename.")
 				const filePath = artifactPath(info, params.kind, params.filename)
 				const text = fs.readFileSync(filePath, "utf8")
 				return {
 					content: [{ type: "text", text }],
-					details: { ...info, kind: params.kind, filename: params.filename, path: filePath },
+					details: {
+						...info,
+						kind: params.kind,
+						filename: params.filename,
+						path: filePath,
+					},
 				}
 			}
 
 			if (action === "write") {
 				if (!params.kind) throw new Error("handoff write requires kind.")
-				if (params.content === undefined) throw new Error("handoff write requires content.")
-				const filename = params.filename ?? filenameFor(params.kind, params.slug ?? "artifact", params.kind === "review" ? params.reviewer ?? "pi" : "pi")
+				if (params.content === undefined)
+					throw new Error("handoff write requires content.")
+				const filename =
+					params.filename ??
+					filenameFor(
+						params.kind,
+						params.slug ?? "artifact",
+						params.kind === "review" ? (params.reviewer ?? "pi") : "pi",
+					)
 				const filePath = artifactPath(info, params.kind, filename)
 				fs.mkdirSync(path.dirname(filePath), { recursive: true })
 				if (params.append) fs.appendFileSync(filePath, params.content)
 				else fs.writeFileSync(filePath, params.content)
 				return {
-					content: [{ type: "text", text: `${params.append ? "Appended" : "Wrote"} handoff artifact: ${filePath}` }],
-					details: { ...info, kind: params.kind, filename, path: filePath, append: Boolean(params.append) },
+					content: [
+						{
+							type: "text",
+							text: `${params.append ? "Appended" : "Wrote"} handoff artifact: ${filePath}`,
+						},
+					],
+					details: {
+						...info,
+						kind: params.kind,
+						filename,
+						path: filePath,
+						append: Boolean(params.append),
+					},
 				}
 			}
 
 			if (action === "review_request") {
-				if (!params.plan) throw new Error("handoff review_request requires plan.")
-				const result = createReviewRequest(info, params.plan, params.reviewer || "claude", params.instructions || DEFAULT_REVIEW_INSTRUCTIONS)
+				if (!params.plan)
+					throw new Error("handoff review_request requires plan.")
+				const result = createReviewRequest(
+					info,
+					params.plan,
+					params.reviewer || "claude",
+					params.instructions || DEFAULT_REVIEW_INSTRUCTIONS,
+				)
 				return {
-					content: [{ type: "text", text: `Created review request: ${result.path}\nPlan: ${result.planPath}` }],
-					details: { ...info, path: result.path, planPath: result.planPath, slug: result.slug, reviewer: params.reviewer || "claude" },
+					content: [
+						{
+							type: "text",
+							text: `Created review request: ${result.path}\nPlan: ${result.planPath}`,
+						},
+					],
+					details: {
+						...info,
+						path: result.path,
+						planPath: result.planPath,
+						slug: result.slug,
+						reviewer: params.reviewer || "claude",
+					},
 				}
 			}
 
 			if (action === "run_claude_review") {
-				if (!params.plan) throw new Error("handoff run_claude_review requires plan.")
+				if (!params.plan)
+					throw new Error("handoff run_claude_review requires plan.")
 				const planPath = resolvePlanPath(info, params.plan)
 				const model = params.model || "opus"
 				const shouldConfirm = params.confirm !== false
 				if (shouldConfirm) {
-					if (!ctx.hasUI) throw new Error("Confirmation required. Re-run with confirm:false only if the user explicitly asked to run Claude Code.")
+					if (!ctx.hasUI)
+						throw new Error(
+							"Confirmation required. Re-run with confirm:false only if the user explicitly asked to run Claude Code.",
+						)
 					const ok = await ctx.ui.confirm(
 						"Run Claude Code review?",
 						`Model: ${model}\nPlan: ${planPath}\nOutput: ${path.join(info.handoffDir, "reviews")}\n\nThis invokes the external claude CLI.`,
 					)
 					if (!ok) {
-						return { content: [{ type: "text", text: "Claude review cancelled." }], details: { ...info, cancelled: true, planPath } }
+						return {
+							content: [
+								{ type: "text", text: "Claude review cancelled." },
+							],
+							details: { ...info, cancelled: true, planPath },
+						}
 					}
 				}
 				const result = await runClaudeReview(info, {
@@ -679,7 +1047,12 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 					timeoutSeconds: params.timeoutSeconds,
 				})
 				return {
-					content: [{ type: "text", text: `Claude review written: ${result.reviewPath}` }],
+					content: [
+						{
+							type: "text",
+							text: `Claude review written: ${result.reviewPath}`,
+						},
+					],
 					details: {
 						...info,
 						planPath: result.planPath,

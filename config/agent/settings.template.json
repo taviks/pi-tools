@@ -1,35 +1,35 @@
 {
-  "packages": [
-    "~/path/to/pi-tools/packages/pi-llm-usage",
-    "~/path/to/pi-tools/packages/pi-agent-handoff",
-    "~/path/to/pi-tools"
-  ],
-  "defaultThinkingLevel": "high",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
-  "transport": "auto",
-  "steeringMode": "all",
-  "enabledModels": [
-    "openai-codex/gpt-5.5",
-    "openai-codex/gpt-5.4",
-    "openai-codex/gpt-5.4-mini",
-    "openai-codex/gpt-5.3-codex",
-    "deepseek/deepseek-v4-pro",
-    "deepseek/deepseek-v4-flash",
-    "openai-codex/gpt-5.3-codex-spark"
-  ],
-  "theme": "nord",
-  "hideThinkingBlock": false,
-  "followUpMode": "all",
-  "images": {
-    "autoResize": true
-  },
-  "editorPaddingX": 1,
-  "autocompleteMaxVisible": 20,
-  "quietStartup": true,
-  "doubleEscapeAction": "tree",
-  "showHardwareCursor": true,
-  "lastChangelogVersion": "0.77.0",
-  "enableInstallTelemetry": false,
-  "treeFilterMode": "default"
+	"packages": [
+		"~/path/to/pi-tools/packages/pi-llm-usage",
+		"~/path/to/pi-tools/packages/pi-agent-handoff",
+		"~/path/to/pi-tools"
+	],
+	"defaultThinkingLevel": "high",
+	"defaultProvider": "openai-codex",
+	"defaultModel": "gpt-5.5",
+	"transport": "auto",
+	"steeringMode": "all",
+	"enabledModels": [
+		"openai-codex/gpt-5.5",
+		"openai-codex/gpt-5.4",
+		"openai-codex/gpt-5.4-mini",
+		"openai-codex/gpt-5.3-codex",
+		"deepseek/deepseek-v4-pro",
+		"deepseek/deepseek-v4-flash",
+		"openai-codex/gpt-5.3-codex-spark"
+	],
+	"theme": "nord",
+	"hideThinkingBlock": false,
+	"followUpMode": "all",
+	"images": {
+		"autoResize": true
+	},
+	"editorPaddingX": 1,
+	"autocompleteMaxVisible": 20,
+	"quietStartup": true,
+	"doubleEscapeAction": "tree",
+	"showHardwareCursor": true,
+	"lastChangelogVersion": "0.77.0",
+	"enableInstallTelemetry": false,
+	"treeFilterMode": "default"
 }

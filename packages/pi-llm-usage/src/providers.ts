@@ -79,8 +79,15 @@ function extractEmailFromJwt(token: string): string | undefined {
 		const raw = Buffer.from(normalized, "base64").toString("utf-8")
 		const data = JSON.parse(raw)
 
-		const profile = data["https://api.openai.com/profile"] ?? data["https://api.anthropic.com/profile"]
-		if (profile && typeof profile === "object" && "email" in profile && typeof profile.email === "string") {
+		const profile =
+			data["https://api.openai.com/profile"] ??
+			data["https://api.anthropic.com/profile"]
+		if (
+			profile &&
+			typeof profile === "object" &&
+			"email" in profile &&
+			typeof profile.email === "string"
+		) {
 			return profile.email
 		}
 
@@ -99,7 +106,10 @@ function extractEmailFromJwt(token: string): string | undefined {
 	}
 }
 
-async function fetchAnthropicProfileEmail(token: string, signal?: AbortSignal): Promise<string | undefined> {
+async function fetchAnthropicProfileEmail(
+	token: string,
+	signal?: AbortSignal,
+): Promise<string | undefined> {
 	try {
 		const res = await fetch("https://api.anthropic.com/api/oauth/profile", {
 			headers: {
@@ -152,7 +162,9 @@ const CODEX_LINKS: ProviderLink[] = [
 	{ label: "status", url: "https://status.openai.com" },
 ]
 
-export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<ProviderUsage> {
+export async function fetchAnthropicUsage(
+	signal?: AbortSignal,
+): Promise<ProviderUsage> {
 	const auth = readPiAuth("anthropic")
 	if (!auth) {
 		return {
@@ -164,7 +176,9 @@ export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<Provide
 	}
 
 	const account =
-		extractEmailFromJwt(auth.access) ?? (await fetchAnthropicProfileEmail(auth.access, signal)) ?? auth.accountId
+		extractEmailFromJwt(auth.access) ??
+		(await fetchAnthropicProfileEmail(auth.access, signal)) ??
+		auth.accountId
 
 	try {
 		const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
@@ -194,7 +208,9 @@ export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<Provide
 			windows.push({
 				label: "5h session",
 				percentUsed: data.five_hour.utilization,
-				resetIn: data.five_hour.resets_at ? formatResetTimestamp(data.five_hour.resets_at) : undefined,
+				resetIn: data.five_hour.resets_at
+					? formatResetTimestamp(data.five_hour.resets_at)
+					: undefined,
 			})
 		}
 
@@ -202,7 +218,9 @@ export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<Provide
 			windows.push({
 				label: "Weekly",
 				percentUsed: data.seven_day.utilization,
-				resetIn: data.seven_day.resets_at ? formatResetTimestamp(data.seven_day.resets_at) : undefined,
+				resetIn: data.seven_day.resets_at
+					? formatResetTimestamp(data.seven_day.resets_at)
+					: undefined,
 			})
 		}
 
@@ -210,7 +228,9 @@ export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<Provide
 			windows.push({
 				label: "Weekly (Opus)",
 				percentUsed: data.seven_day_opus.utilization,
-				resetIn: data.seven_day_opus.resets_at ? formatResetTimestamp(data.seven_day_opus.resets_at) : undefined,
+				resetIn: data.seven_day_opus.resets_at
+					? formatResetTimestamp(data.seven_day_opus.resets_at)
+					: undefined,
 			})
 		}
 
@@ -227,12 +247,26 @@ export async function fetchAnthropicUsage(signal?: AbortSignal): Promise<Provide
 		return { provider: "Anthropic", account, windows, links: ANTHROPIC_LINKS }
 	} catch (e: any) {
 		if (e.name === "AbortError")
-			return { provider: "Anthropic", account, error: "Cancelled", windows: [], links: ANTHROPIC_LINKS }
-		return { provider: "Anthropic", account, error: e.message, windows: [], links: ANTHROPIC_LINKS }
+			return {
+				provider: "Anthropic",
+				account,
+				error: "Cancelled",
+				windows: [],
+				links: ANTHROPIC_LINKS,
+			}
+		return {
+			provider: "Anthropic",
+			account,
+			error: e.message,
+			windows: [],
+			links: ANTHROPIC_LINKS,
+		}
 	}
 }
 
-export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsage> {
+export async function fetchCodexUsage(
+	signal?: AbortSignal,
+): Promise<ProviderUsage> {
 	const piAuth = readPiAuth("openai-codex")
 	const codexAuth = readCodexAuth()
 	const accessToken = piAuth?.access ?? codexAuth?.accessToken
@@ -246,7 +280,8 @@ export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsa
 		}
 	}
 
-	const account = extractEmailFromJwt(accessToken) ?? codexAuth?.email ?? piAuth?.accountId
+	const account =
+		extractEmailFromJwt(accessToken) ?? codexAuth?.email ?? piAuth?.accountId
 
 	try {
 		const res = await fetch("https://chatgpt.com/backend-api/wham/usage", {
@@ -277,7 +312,10 @@ export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsa
 			windows.push({
 				label: "5h session",
 				percentUsed: pw.used_percent,
-				resetIn: pw.reset_after_seconds != null ? formatSeconds(pw.reset_after_seconds) : undefined,
+				resetIn:
+					pw.reset_after_seconds != null
+						? formatSeconds(pw.reset_after_seconds)
+						: undefined,
 			})
 		}
 
@@ -286,7 +324,10 @@ export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsa
 			windows.push({
 				label: "Weekly",
 				percentUsed: sw.used_percent,
-				resetIn: sw.reset_after_seconds != null ? formatSeconds(sw.reset_after_seconds) : undefined,
+				resetIn:
+					sw.reset_after_seconds != null
+						? formatSeconds(sw.reset_after_seconds)
+						: undefined,
 			})
 		}
 
@@ -296,15 +337,24 @@ export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsa
 				if (!extra.limit_name || !extra.rate_limit) continue
 				const pw = extra.rate_limit.primary_window
 				const sw = extra.rate_limit.secondary_window
-				const anyUsage = (pw?.used_percent ?? 0) > 0 || (sw?.used_percent ?? 0) > 0
+				const anyUsage =
+					(pw?.used_percent ?? 0) > 0 || (sw?.used_percent ?? 0) > 0
 				if (!anyUsage) continue
 
 				// Use a shorter label
-				const shortName = extra.limit_name.replace(/^GPT-/, "").replace(/-Codex-/, " ")
+				const shortName = extra.limit_name
+					.replace(/^GPT-/, "")
+					.replace(/-Codex-/, " ")
 				windows.push({
 					label: shortName,
-					percentUsed: Math.max(pw?.used_percent ?? 0, sw?.used_percent ?? 0),
-					resetIn: sw?.reset_after_seconds != null ? formatSeconds(sw.reset_after_seconds) : undefined,
+					percentUsed: Math.max(
+						pw?.used_percent ?? 0,
+						sw?.used_percent ?? 0,
+					),
+					resetIn:
+						sw?.reset_after_seconds != null
+							? formatSeconds(sw.reset_after_seconds)
+							: undefined,
 				})
 			}
 		}
@@ -316,15 +366,36 @@ export async function fetchCodexUsage(signal?: AbortSignal): Promise<ProviderUsa
 				windows.push({
 					label: "Code Review",
 					percentUsed: cr.used_percent,
-					resetIn: cr.reset_after_seconds != null ? formatSeconds(cr.reset_after_seconds) : undefined,
+					resetIn:
+						cr.reset_after_seconds != null
+							? formatSeconds(cr.reset_after_seconds)
+							: undefined,
 				})
 			}
 		}
 
-		return { provider: "OpenAI Codex", account, plan, windows, links: CODEX_LINKS }
+		return {
+			provider: "OpenAI Codex",
+			account,
+			plan,
+			windows,
+			links: CODEX_LINKS,
+		}
 	} catch (e: any) {
 		if (e.name === "AbortError")
-			return { provider: "OpenAI Codex", account, error: "Cancelled", windows: [], links: CODEX_LINKS }
-		return { provider: "OpenAI Codex", account, error: e.message, windows: [], links: CODEX_LINKS }
+			return {
+				provider: "OpenAI Codex",
+				account,
+				error: "Cancelled",
+				windows: [],
+				links: CODEX_LINKS,
+			}
+		return {
+			provider: "OpenAI Codex",
+			account,
+			error: e.message,
+			windows: [],
+			links: CODEX_LINKS,
+		}
 	}
 }

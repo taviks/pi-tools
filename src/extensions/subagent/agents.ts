@@ -1,6 +1,6 @@
 /**
-	* Agent discovery and configuration
-	*/
+ * Agent discovery and configuration
+ */
 
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -27,7 +27,10 @@ function getBundledAgentsDir(): string {
 	return path.resolve(__dirname, "../../../agents")
 }
 
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
+function loadAgentsFromDir(
+	dir: string,
+	source: "user" | "project",
+): AgentConfig[] {
 	const agents: AgentConfig[] = []
 
 	if (!fs.existsSync(dir)) {
@@ -53,7 +56,8 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			continue
 		}
 
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(content)
+		const { frontmatter, body } =
+			parseFrontmatter<Record<string, string>>(content)
 
 		if (!frontmatter.name || !frontmatter.description) {
 			continue
@@ -98,14 +102,22 @@ function findNearestProjectAgentsDir(cwd: string): string | null {
 	}
 }
 
-export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
+export function discoverAgents(
+	cwd: string,
+	scope: AgentScope,
+): AgentDiscoveryResult {
 	const bundledDir = getBundledAgentsDir()
 	const userDir = path.join(getAgentDir(), "agents")
 	const projectAgentsDir = findNearestProjectAgentsDir(cwd)
 
-	const bundledAgents = scope === "project" ? [] : loadAgentsFromDir(bundledDir, "user")
-	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userDir, "user")
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project")
+	const bundledAgents =
+		scope === "project" ? [] : loadAgentsFromDir(bundledDir, "user")
+	const userAgents =
+		scope === "project" ? [] : loadAgentsFromDir(userDir, "user")
+	const projectAgents =
+		scope === "user" || !projectAgentsDir
+			? []
+			: loadAgentsFromDir(projectAgentsDir, "project")
 
 	const agentMap = new Map<string, AgentConfig>()
 
@@ -123,12 +135,17 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	return { agents: Array.from(agentMap.values()), projectAgentsDir }
 }
 
-export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {
+export function formatAgentList(
+	agents: AgentConfig[],
+	maxItems: number,
+): { text: string; remaining: number } {
 	if (agents.length === 0) return { text: "none", remaining: 0 }
 	const listed = agents.slice(0, maxItems)
 	const remaining = agents.length - listed.length
 	return {
-		text: listed.map((a) => `${a.name} (${a.source}): ${a.description}`).join("; "),
+		text: listed
+			.map((a) => `${a.name} (${a.source}): ${a.description}`)
+			.join("; "),
 		remaining,
 	}
 }

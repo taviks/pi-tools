@@ -34,11 +34,15 @@ function cloneConfig(config: NotifyConfig): NotifyConfig {
 }
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		return undefined
 	return value as Record<string, unknown>
 }
 
-export function mergeNotifyConfig(value: unknown, fallback: NotifyConfig = DEFAULT_NOTIFY_CONFIG): NotifyConfig {
+export function mergeNotifyConfig(
+	value: unknown,
+	fallback: NotifyConfig = DEFAULT_NOTIFY_CONFIG,
+): NotifyConfig {
 	const record = asObject(value)
 	return {
 		sound: typeof record?.sound === "boolean" ? record.sound : fallback.sound,
@@ -47,7 +51,8 @@ export function mergeNotifyConfig(value: unknown, fallback: NotifyConfig = DEFAU
 }
 
 function getGlobalState(): NotifyGlobalState {
-	const globalState = globalThis as typeof globalThis & Record<string, NotifyGlobalState | undefined>
+	const globalState = globalThis as typeof globalThis &
+		Record<string, NotifyGlobalState | undefined>
 	globalState[GLOBAL_STATE_KEY] ??= {}
 	return globalState[GLOBAL_STATE_KEY]!
 }
@@ -61,10 +66,16 @@ export function readNotifyDefaults(): NotifyConfig {
 	}
 }
 
-export function writeNotifyDefaults(config: NotifyConfig): { success: true } | { success: false; error: string } {
+export function writeNotifyDefaults(
+	config: NotifyConfig,
+): { success: true } | { success: false; error: string } {
 	try {
 		mkdirSync(dirname(DEFAULTS_PATH), { recursive: true })
-		writeFileSync(DEFAULTS_PATH, `${JSON.stringify(cloneConfig(config), null, 2)}\n`, "utf8")
+		writeFileSync(
+			DEFAULTS_PATH,
+			`${JSON.stringify(cloneConfig(config), null, 2)}\n`,
+			"utf8",
+		)
 		return { success: true }
 	} catch (error) {
 		return {
@@ -85,7 +96,9 @@ export function setNotifyCurrentState(config: NotifyConfig): NotifyConfig {
 	return cloneConfig(next)
 }
 
-export function initializeNotifyCurrentState(defaults: NotifyConfig = readNotifyDefaults()): NotifyConfig {
+export function initializeNotifyCurrentState(
+	defaults: NotifyConfig = readNotifyDefaults(),
+): NotifyConfig {
 	const state = getGlobalState()
 	if (!state.current) {
 		state.current = cloneConfig(defaults)

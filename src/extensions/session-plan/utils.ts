@@ -1,5 +1,9 @@
 export type SessionPlanMode = "idle" | "tracking"
-export type SessionPlanStepStatus = "pending" | "in_progress" | "done" | "blocked"
+export type SessionPlanStepStatus =
+	| "pending"
+	| "in_progress"
+	| "done"
+	| "blocked"
 
 export interface SessionPlanStep {
 	step: number
@@ -11,7 +15,8 @@ export interface SessionPlanStep {
 // Only explicit task-list/checklist/todo/work-plan sections should seed the tracker.
 // Broad signals like bare numbered lists or generic "Plan" headings are too noisy:
 // they also appear in option lists, recommendations, explanations, and comparisons.
-const TASK_LIST_HEADER = /^(?:#{1,6}\s*(?:task\s*list|checklist|todo(?:\s*list)?|work\s*plan|execution\s*plan)\b.*|\*{0,2}(?:task\s*list|checklist|todo(?:\s*list)?|work\s*plan|execution\s*plan):?\*{0,2}\b.*)$/i
+const TASK_LIST_HEADER =
+	/^(?:#{1,6}\s*(?:task\s*list|checklist|todo(?:\s*list)?|work\s*plan|execution\s*plan)\b.*|\*{0,2}(?:task\s*list|checklist|todo(?:\s*list)?|work\s*plan|execution\s*plan):?\*{0,2}\b.*)$/i
 const TASK_LIST_SECTION_END = /^#{1,6}\s+/
 const CHECKBOX_ITEM = /^[-*]\s+\[([ xX])\]\s+(.+)$/
 const NUMBERED_ITEM = /^(\d+)[.)]\s+(.+)$/
@@ -25,7 +30,8 @@ export function cleanStepText(text: string): string {
 		.trim()
 
 	cleaned = cleaned.replace(/[.;:,]+$/, "").trim()
-	if (cleaned.length > 0) cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+	if (cleaned.length > 0)
+		cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
 	return cleaned
 }
 
@@ -37,7 +43,10 @@ export function extractGoal(text: string): string | undefined {
 	for (const rawLine of lines) {
 		const line = rawLine.trim()
 		if (!inGoal) {
-			if (/^#{1,6}\s*goal\s*$/i.test(line) || /^\*{0,2}goal:?\*{0,2}$/i.test(line)) {
+			if (
+				/^#{1,6}\s*goal\s*$/i.test(line) ||
+				/^\*{0,2}goal:?\*{0,2}$/i.test(line)
+			) {
 				inGoal = true
 			}
 			continue
@@ -80,7 +89,11 @@ export function extractPlanSteps(text: string): SessionPlanStep[] {
 			}
 		}
 
-		if (TASK_LIST_SECTION_END.test(trimmed) && !TASK_LIST_HEADER.test(trimmed)) break
+		if (
+			TASK_LIST_SECTION_END.test(trimmed) &&
+			!TASK_LIST_HEADER.test(trimmed)
+		)
+			break
 
 		const numbered = trimmed.match(NUMBERED_ITEM)
 		if (numbered) {
@@ -92,7 +105,10 @@ export function extractPlanSteps(text: string): SessionPlanStep[] {
 		const checkbox = trimmed.match(CHECKBOX_ITEM)
 		if (checkbox) {
 			if (current) collected.push(current)
-			current = { text: checkbox[2], status: checkbox[1].toLowerCase() === "x" ? "done" : "pending" }
+			current = {
+				text: checkbox[2],
+				status: checkbox[1].toLowerCase() === "x" ? "done" : "pending",
+			}
 			continue
 		}
 
@@ -127,14 +143,22 @@ function normalizeStepText(text: string): string {
 		.trim()
 }
 
-export function mergeSteps(previous: SessionPlanStep[], next: SessionPlanStep[]): SessionPlanStep[] {
+export function mergeSteps(
+	previous: SessionPlanStep[],
+	next: SessionPlanStep[],
+): SessionPlanStep[] {
 	if (previous.length === 0) return next
 	if (next.length === 0) return []
 
-	const previousByText = new Map(previous.map((step) => [normalizeStepText(step.text), step]))
+	const previousByText = new Map(
+		previous.map((step) => [normalizeStepText(step.text), step]),
+	)
 	const previousByStep = new Map(previous.map((step) => [step.step, step]))
-	const overlap = next.filter((step) => previousByText.has(normalizeStepText(step.text))).length
-	const likelySameTask = overlap / Math.max(1, Math.min(previous.length, next.length)) >= 0.35
+	const overlap = next.filter((step) =>
+		previousByText.has(normalizeStepText(step.text)),
+	).length
+	const likelySameTask =
+		overlap / Math.max(1, Math.min(previous.length, next.length)) >= 0.35
 	if (!likelySameTask) return next
 
 	return next.map((step) => {
@@ -158,16 +182,26 @@ export interface ProgressMarker {
 
 export function extractProgressMarkers(text: string): ProgressMarker[] {
 	const markers: ProgressMarker[] = []
-	for (const match of text.matchAll(/\[(START|DONE|BLOCKED):(\d+)(?:\s+([^\]]+))?\]/gi)) {
+	for (const match of text.matchAll(
+		/\[(START|DONE|BLOCKED):(\d+)(?:\s+([^\]]+))?\]/gi,
+	)) {
 		const step = Number(match[2])
 		if (!Number.isFinite(step)) continue
-		const action = match[1].toLowerCase() === "start" ? "start" : match[1].toLowerCase() === "done" ? "complete" : "block"
+		const action =
+			match[1].toLowerCase() === "start"
+				? "start"
+				: match[1].toLowerCase() === "done"
+					? "complete"
+					: "block"
 		markers.push({ action, step, note: match[3]?.trim() || undefined })
 	}
 	return markers
 }
 
-export function applyProgressMarkers(text: string, steps: SessionPlanStep[]): number {
+export function applyProgressMarkers(
+	text: string,
+	steps: SessionPlanStep[],
+): number {
 	const markers = extractProgressMarkers(text)
 	for (const marker of markers) {
 		const step = steps.find((item) => item.step === marker.step)

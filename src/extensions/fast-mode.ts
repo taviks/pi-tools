@@ -1,4 +1,7 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 
 import {
 	FAST_MODE_ENV_KEY,
@@ -43,7 +46,8 @@ function modelIdSupportsFastServiceTier(id: unknown): boolean {
 function supportsFastMode(ctx: ExtensionContext | undefined): boolean {
 	const model = ctx?.model
 	if (!model) return false
-	if (model.provider !== "openai" && model.provider !== "openai-codex") return false
+	if (model.provider !== "openai" && model.provider !== "openai-codex")
+		return false
 	return modelIdSupportsFastServiceTier(model.id)
 }
 
@@ -51,11 +55,13 @@ function modelLabel(ctx: ExtensionContext): string {
 	return ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "current model"
 }
 
-function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+function commandItems(
+	prefix: string,
+): Array<{ value: string; label: string }> | null {
 	const normalized = prefix.trim().toLowerCase()
-	const items = COMMAND_CHOICES
-		.filter((choice) => choice.startsWith(normalized))
-		.map((choice) => ({ value: choice, label: choice }))
+	const items = COMMAND_CHOICES.filter((choice) =>
+		choice.startsWith(normalized),
+	).map((choice) => ({ value: choice, label: choice }))
 	return items.length > 0 ? items : null
 }
 
@@ -76,7 +82,9 @@ function syncFastModeEnv(active: boolean, serviceTier: FastServiceTier): void {
 
 export default function fastModeExtension(pi: ExtensionAPI) {
 	let fastModeActive = envFastModeActive()
-	let serviceTier: FastServiceTier = isFastServiceTier(process.env[FAST_SERVICE_TIER_ENV_KEY])
+	let serviceTier: FastServiceTier = isFastServiceTier(
+		process.env[FAST_SERVICE_TIER_ENV_KEY],
+	)
 		? process.env[FAST_SERVICE_TIER_ENV_KEY]
 		: FAST_SERVICE_TIER
 
@@ -106,12 +114,16 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 
 		const lastState = ctx.sessionManager
 			.getEntries()
-			.filter((entry: { type?: string; customType?: string }) => entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE)
+			.filter(
+				(entry: { type?: string; customType?: string }) =>
+					entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE,
+			)
 			.pop() as { data?: PersistedFastModeState } | undefined
 
 		if (lastState?.data) {
 			if (lastState.data.active === true) fastModeActive = true
-			if (isFastServiceTier(lastState.data.serviceTier)) serviceTier = lastState.data.serviceTier
+			if (isFastServiceTier(lastState.data.serviceTier))
+				serviceTier = lastState.data.serviceTier
 		}
 
 		syncFastModeEnv(fastModeActive, serviceTier)
@@ -143,12 +155,17 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 	const disableFastMode = (ctx: ExtensionContext) => {
 		fastModeActive = false
 		persistState()
-		ctx.ui.notify(`OpenAI Fast mode off · ${modelLabel(ctx)} · service_tier:default`, "info")
+		ctx.ui.notify(
+			`OpenAI Fast mode off · ${modelLabel(ctx)} · service_tier:default`,
+			"info",
+		)
 	}
 
 	const showStatus = (ctx: ExtensionContext) => {
 		const currentSupport = supportsFastMode(ctx)
-		const scope = currentSupport ? `applies to ${modelLabel(ctx)}` : `current model unsupported (${modelLabel(ctx)})`
+		const scope = currentSupport
+			? `applies to ${modelLabel(ctx)}`
+			: `current model unsupported (${modelLabel(ctx)})`
 		ctx.ui.notify(
 			`OpenAI Fast mode ${fastModeActive ? "on" : "off"} · service_tier:${fastModeActive ? serviceTierLabel(serviceTier) : "default"} · ${scope} · subagents:${fastModeActive ? "inherit" : "default"} · thinking:${pi.getThinkingLevel()}`,
 			"info",
@@ -176,7 +193,10 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 			return
 		}
 
-		ctx.ui.notify(`Unknown /fast action "${normalized}". Use: toggle, on, off, status.`, "error")
+		ctx.ui.notify(
+			`Unknown /fast action "${normalized}". Use: toggle, on, off, status.`,
+			"error",
+		)
 	}
 
 	pi.on("session_start", (_event, ctx) => {
@@ -190,7 +210,13 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 
 	pi.on("before_provider_request", (event, ctx) => {
 		if (!fastModeActive && !envFastModeActive()) return
-		if (!supportsFastMode(ctx) && !modelIdSupportsFastServiceTier((event.payload as { model?: unknown })?.model)) return
+		if (
+			!supportsFastMode(ctx) &&
+			!modelIdSupportsFastServiceTier(
+				(event.payload as { model?: unknown })?.model,
+			)
+		)
+			return
 
 		const payload = event.payload
 		if (!payload || typeof payload !== "object") return
@@ -209,7 +235,8 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("fast", {
-		description: "Toggle OpenAI service-tier Fast mode for GPT-5.5/GPT-5.4. Usage: /fast [toggle|on|off|status]",
+		description:
+			"Toggle OpenAI service-tier Fast mode for GPT-5.5/GPT-5.4. Usage: /fast [toggle|on|off|status]",
 		getArgumentCompletions: commandItems,
 		handler: async (args, ctx) => {
 			runAction(args, ctx)

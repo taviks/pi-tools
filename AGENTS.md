@@ -14,8 +14,10 @@
 Use the root workspace unless a task explicitly says otherwise:
 
 ```bash
-pnpm -s check          # layout JSON checks + TypeScript typecheck
+pnpm -s check          # layout JSON checks + Prettier format check + TypeScript typecheck
 pnpm -s check:layout   # directory/template/JSON validation
+pnpm -s format         # Prettier write using the repo's VS Code-compatible defaults
+pnpm -s format:check   # Prettier check
 pnpm -s typecheck      # tsc --noEmit
 ```
 
@@ -33,4 +35,5 @@ pnpm -s typecheck      # tsc --noEmit
 - Keep root-package extensions in `src/extensions/` when they are part of the integrated daily Pi runtime or share root extension state.
 - Add or keep separate packages under `packages/*` only when standalone install/use, distinct security/config concerns, distinct dependencies, or publishability justify the boundary.
 - Prefer small focused edits and avoid unrelated formatting churn.
+- Format JS/TS with the repo Prettier config: tabs, `tabWidth: 3`, no semicolons. Run `pnpm -s format` for intentional formatting, or format only touched files to avoid broad churn.
 - When changing Pi extension behavior, update the relevant README/docs and run `pnpm -s check`.

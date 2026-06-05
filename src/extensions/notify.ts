@@ -2,9 +2,18 @@ import { execFile } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	Theme,
+} from "@earendil-works/pi-coding-agent"
 import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai"
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
+import {
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui"
 import {
 	hasAnyNotifyChannel,
 	initializeNotifyCurrentState,
@@ -118,14 +127,18 @@ function sendToast(title: string, body: string): void {
 	}
 
 	if (process.platform === "win32" || process.env.WT_SESSION) {
-		execDetached("powershell.exe", ["-NoProfile", "-Command", windowsToastScript(title, body)], () =>
-			sendTerminalToast(title, body),
+		execDetached(
+			"powershell.exe",
+			["-NoProfile", "-Command", windowsToastScript(title, body)],
+			() => sendTerminalToast(title, body),
 		)
 		return
 	}
 
 	if (process.platform === "linux") {
-		execDetached("notify-send", [title, body], () => sendTerminalToast(title, body))
+		execDetached("notify-send", [title, body], () =>
+			sendTerminalToast(title, body),
+		)
 		return
 	}
 
@@ -139,14 +152,20 @@ function sendTerminalToast(title: string, body: string): void {
 
 function sendSound(): void {
 	if (process.platform === "darwin") {
-		execDetached("afplay", ["/System/Library/Sounds/Glass.aiff"], () => process.stdout.write("\x07"))
+		execDetached("afplay", ["/System/Library/Sounds/Glass.aiff"], () =>
+			process.stdout.write("\x07"),
+		)
 		return
 	}
 
 	if (process.platform === "win32" || process.env.WT_SESSION) {
 		execDetached(
 			"powershell.exe",
-			["-NoProfile", "-Command", "[System.Media.SystemSounds]::Notification.Play()"],
+			[
+				"-NoProfile",
+				"-Command",
+				"[System.Media.SystemSounds]::Notification.Play()",
+			],
 			() => process.stdout.write("\x07"),
 		)
 		return
@@ -155,7 +174,11 @@ function sendSound(): void {
 	process.stdout.write("\x07")
 }
 
-function fireNotification(config: NotifyConfig, title = TOAST_TITLE, body = "Ready for input"): boolean {
+function fireNotification(
+	config: NotifyConfig,
+	title = TOAST_TITLE,
+	body = "Ready for input",
+): boolean {
 	if (!hasAnyNotifyChannel(config)) return false
 	if (config.toast) sendToast(title, body)
 	if (config.sound) sendSound()
@@ -170,16 +193,23 @@ function describeConfig(config: NotifyConfig): string {
 }
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
-	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		return undefined
 	return value as Record<string, unknown>
 }
 
-function mergeRecords(base: Record<string, unknown>, overrides: Record<string, unknown>): Record<string, unknown> {
+function mergeRecords(
+	base: Record<string, unknown>,
+	overrides: Record<string, unknown>,
+): Record<string, unknown> {
 	const result: Record<string, unknown> = { ...base }
 	for (const [key, overrideValue] of Object.entries(overrides)) {
 		const baseValue = asObject(result[key])
 		const overrideRecord = asObject(overrideValue)
-		result[key] = baseValue && overrideRecord ? mergeRecords(baseValue, overrideRecord) : overrideValue
+		result[key] =
+			baseValue && overrideRecord
+				? mergeRecords(baseValue, overrideRecord)
+				: overrideValue
 	}
 	return result
 }
@@ -194,17 +224,24 @@ function readJsonObject(path: string): Record<string, unknown> {
 
 function expandTildePath(path: string): string {
 	if (path === "~") return homedir()
-	if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2))
+	if (path.startsWith("~/") || path.startsWith("~\\"))
+		return join(homedir(), path.slice(2))
 	return path
 }
 
 function agentSettingsPath(): string {
 	const envDir = process.env.PI_CODING_AGENT_DIR
-	return join(envDir ? expandTildePath(envDir) : join(homedir(), ".pi", "agent"), "settings.json")
+	return join(
+		envDir ? expandTildePath(envDir) : join(homedir(), ".pi", "agent"),
+		"settings.json",
+	)
 }
 
 function readPiSettings(cwd: string): Record<string, unknown> {
-	return mergeRecords(readJsonObject(agentSettingsPath()), readJsonObject(join(cwd, ".pi", "settings.json")))
+	return mergeRecords(
+		readJsonObject(agentSettingsPath()),
+		readJsonObject(join(cwd, ".pi", "settings.json")),
+	)
 }
 
 function numberSetting(value: unknown, fallback: number): number {
@@ -219,19 +256,33 @@ function retrySettings(cwd: string): RetrySettings {
 	const retry = asObject(readPiSettings(cwd).retry)
 	return {
 		enabled: booleanSetting(retry?.enabled, DEFAULT_RETRY_SETTINGS.enabled),
-		maxRetries: Math.max(0, Math.floor(numberSetting(retry?.maxRetries, DEFAULT_RETRY_SETTINGS.maxRetries))),
+		maxRetries: Math.max(
+			0,
+			Math.floor(
+				numberSetting(retry?.maxRetries, DEFAULT_RETRY_SETTINGS.maxRetries),
+			),
+		),
 	}
 }
 
 function compactionSettings(cwd: string): CompactionSettings {
 	const compaction = asObject(readPiSettings(cwd).compaction)
 	return {
-		enabled: booleanSetting(compaction?.enabled, DEFAULT_COMPACTION_SETTINGS.enabled),
-		reserveTokens: numberSetting(compaction?.reserveTokens, DEFAULT_COMPACTION_SETTINGS.reserveTokens),
+		enabled: booleanSetting(
+			compaction?.enabled,
+			DEFAULT_COMPACTION_SETTINGS.enabled,
+		),
+		reserveTokens: numberSetting(
+			compaction?.reserveTokens,
+			DEFAULT_COMPACTION_SETTINGS.reserveTokens,
+		),
 	}
 }
 
-function truncatePreview(text: string, max = TOAST_RESPONSE_PREVIEW_MAX): string {
+function truncatePreview(
+	text: string,
+	max = TOAST_RESPONSE_PREVIEW_MAX,
+): string {
 	const normalized = text.replace(/\s+/g, " ").trim()
 	if (normalized.length <= max) return normalized
 	return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`
@@ -239,7 +290,10 @@ function truncatePreview(text: string, max = TOAST_RESPONSE_PREVIEW_MAX): string
 
 function cwdSegment(cwd: string): string {
 	const trimmed = cwd.replace(/[\\/]+$/, "")
-	const home = (process.env.HOME || process.env.USERPROFILE || "").replace(/[\\/]+$/, "")
+	const home = (process.env.HOME || process.env.USERPROFILE || "").replace(
+		/[\\/]+$/,
+		"",
+	)
 	if (home && trimmed === home) return "~"
 	return basename(trimmed) || trimmed || cwd || "pi"
 }
@@ -289,24 +343,52 @@ function lastAssistantMessage(messages: unknown): AssistantRecord | undefined {
 }
 
 function assistantErrorMessage(message: AssistantRecord): string | undefined {
-	return typeof message.errorMessage === "string" && message.errorMessage.trim()
+	return typeof message.errorMessage === "string" &&
+		message.errorMessage.trim()
 		? message.errorMessage.trim()
 		: undefined
 }
 
-function errorToastBody(ctx: ExtensionContext, message: AssistantRecord): string {
-	return [cwdSegment(ctx.cwd), truncatePreview(assistantErrorMessage(message) ?? "Agent ended with an error")].join("\n")
+function errorToastBody(
+	ctx: ExtensionContext,
+	message: AssistantRecord,
+): string {
+	return [
+		cwdSegment(ctx.cwd),
+		truncatePreview(
+			assistantErrorMessage(message) ?? "Agent ended with an error",
+		),
+	].join("\n")
 }
 
-function sameCurrentModel(message: AssistantRecord, ctx: ExtensionContext): boolean {
-	return Boolean(ctx.model && message.provider === ctx.model.provider && message.model === ctx.model.id)
+function sameCurrentModel(
+	message: AssistantRecord,
+	ctx: ExtensionContext,
+): boolean {
+	return Boolean(
+		ctx.model &&
+		message.provider === ctx.model.provider &&
+		message.model === ctx.model.id,
+	)
 }
 
-function isOverflowError(message: AssistantRecord, ctx: ExtensionContext): boolean {
-	return sameCurrentModel(message, ctx) && isContextOverflow(message as unknown as AssistantMessage, ctx.model?.contextWindow ?? 0)
+function isOverflowError(
+	message: AssistantRecord,
+	ctx: ExtensionContext,
+): boolean {
+	return (
+		sameCurrentModel(message, ctx) &&
+		isContextOverflow(
+			message as unknown as AssistantMessage,
+			ctx.model?.contextWindow ?? 0,
+		)
+	)
 }
 
-function isRetryableAgentError(message: AssistantRecord, ctx: ExtensionContext): boolean {
+function isRetryableAgentError(
+	message: AssistantRecord,
+	ctx: ExtensionContext,
+): boolean {
 	const errorMessage = assistantErrorMessage(message)
 	if (message.stopReason !== "error" || !errorMessage) return false
 	if (isOverflowError(message, ctx)) return false
@@ -314,8 +396,16 @@ function isRetryableAgentError(message: AssistantRecord, ctx: ExtensionContext):
 	return RETRYABLE_AGENT_ERROR.test(errorMessage)
 }
 
-function shouldDeferForLikelyCompaction(message: AssistantRecord | undefined, ctx: ExtensionContext): boolean {
-	if (!message || message.stopReason === "error" || message.stopReason === "aborted") return false
+function shouldDeferForLikelyCompaction(
+	message: AssistantRecord | undefined,
+	ctx: ExtensionContext,
+): boolean {
+	if (
+		!message ||
+		message.stopReason === "error" ||
+		message.stopReason === "aborted"
+	)
+		return false
 	const settings = compactionSettings(ctx.cwd)
 	if (!settings.enabled) return false
 	const contextWindow = ctx.model?.contextWindow ?? 0
@@ -331,14 +421,19 @@ function shouldDeferForLikelyCompaction(message: AssistantRecord | undefined, ct
 	return contextTokens > contextWindow - settings.reserveTokens
 }
 
-function toastBody(ctx: ExtensionContext, event?: { messages?: unknown }): string {
+function toastBody(
+	ctx: ExtensionContext,
+	event?: { messages?: unknown },
+): string {
 	const lines = [cwdSegment(ctx.cwd)]
 	const preview = firstAssistantResponseLine(event?.messages)
 	if (preview) lines.push(preview)
 	return lines.join("\n")
 }
 
-function enableTerminalFocusTracking(onFocusChange: (focused: boolean) => void): (() => void) | undefined {
+function enableTerminalFocusTracking(
+	onFocusChange: (focused: boolean) => void,
+): (() => void) | undefined {
 	if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined
 
 	const onData = (data: Buffer | string) => {
@@ -357,9 +452,13 @@ function enableTerminalFocusTracking(onFocusChange: (focused: boolean) => void):
 	}
 }
 
-function commandItems(prefix: string): Array<{ value: string; label: string }> | null {
+function commandItems(
+	prefix: string,
+): Array<{ value: string; label: string }> | null {
 	const normalized = prefix.trim().toLowerCase()
-	const items = COMMAND_CHOICES.filter((choice) => choice.startsWith(normalized)).map((choice) => ({
+	const items = COMMAND_CHOICES.filter((choice) =>
+		choice.startsWith(normalized),
+	).map((choice) => ({
 		value: choice,
 		label: choice,
 	}))
@@ -367,12 +466,21 @@ function commandItems(prefix: string): Array<{ value: string; label: string }> |
 }
 
 function renderNotifyIcons(config: NotifyConfig, theme: Theme): string {
-	const sound = config.sound ? theme.fg("accent", NOTIFY_ICONS.soundOn) : theme.fg("dim", NOTIFY_ICONS.soundOff)
-	const toast = config.toast ? theme.fg("accent", NOTIFY_ICONS.toastOn) : theme.fg("dim", NOTIFY_ICONS.toastOff)
+	const sound = config.sound
+		? theme.fg("accent", NOTIFY_ICONS.soundOn)
+		: theme.fg("dim", NOTIFY_ICONS.soundOff)
+	const toast = config.toast
+		? theme.fg("accent", NOTIFY_ICONS.toastOn)
+		: theme.fg("dim", NOTIFY_ICONS.toastOff)
 	return `${sound} ${toast}`
 }
 
-function renderStateIcon(enabled: boolean, onIcon: string, offIcon: string, theme: Theme): string {
+function renderStateIcon(
+	enabled: boolean,
+	onIcon: string,
+	offIcon: string,
+	theme: Theme,
+): string {
 	return enabled ? theme.fg("accent", onIcon) : theme.fg("dim", offIcon)
 }
 
@@ -397,17 +505,31 @@ function renderPanel(
 		return fitted + " ".repeat(Math.max(0, contentW - visibleWidth(fitted)))
 	}
 	const row = (content = "") =>
-		theme.fg("border", "│") + " ".repeat(pad) + fit(content) + " ".repeat(pad) + theme.fg("border", "│")
+		theme.fg("border", "│") +
+		" ".repeat(pad) +
+		fit(content) +
+		" ".repeat(pad) +
+		theme.fg("border", "│")
 	const key = (value: string) => theme.fg("accent", theme.bold(value))
 	const label = (value: string) => theme.fg("text", value)
 	const hint = (value: string) => theme.fg("dim", value)
 
 	const valueColumn = 22
-	const configRow = (hotkey: string, name: string, enabled: boolean, onIcon: string, offIcon: string) => {
+	const configRow = (
+		hotkey: string,
+		name: string,
+		enabled: boolean,
+		onIcon: string,
+		offIcon: string,
+	) => {
 		const left = `${key(hotkey)}  ${label(name)}`
 		const gap = Math.max(1, valueColumn - visibleWidth(`${hotkey}  ${name}`))
 		return row(
-			left + " ".repeat(gap) + renderStateIcon(enabled, onIcon, offIcon, theme) + " " + onOff(enabled, theme),
+			left +
+				" ".repeat(gap) +
+				renderStateIcon(enabled, onIcon, offIcon, theme) +
+				" " +
+				onOff(enabled, theme),
 		)
 	}
 
@@ -415,23 +537,63 @@ function renderPanel(
 	lines.push(row())
 	const title = theme.fg("accent", theme.bold("Notify"))
 	const icons = renderNotifyIcons(current, theme)
-	lines.push(row(title + " ".repeat(Math.max(1, contentW - visibleWidth("Notify") - 3)) + icons))
+	lines.push(
+		row(
+			title +
+				" ".repeat(Math.max(1, contentW - visibleWidth("Notify") - 3)) +
+				icons,
+		),
+	)
 	lines.push(row())
 	lines.push(row())
 	lines.push(row(theme.fg("muted", "Session (current instance)")))
 	lines.push(row())
-	lines.push(configRow("s", "Sound", current.sound, NOTIFY_ICONS.soundOn, NOTIFY_ICONS.soundOff))
-	lines.push(configRow("t", "Toast", current.toast, NOTIFY_ICONS.toastOn, NOTIFY_ICONS.toastOff))
+	lines.push(
+		configRow(
+			"s",
+			"Sound",
+			current.sound,
+			NOTIFY_ICONS.soundOn,
+			NOTIFY_ICONS.soundOff,
+		),
+	)
+	lines.push(
+		configRow(
+			"t",
+			"Toast",
+			current.toast,
+			NOTIFY_ICONS.toastOn,
+			NOTIFY_ICONS.toastOff,
+		),
+	)
 	lines.push(row())
 	lines.push(row())
 	lines.push(row(theme.fg("muted", "Defaults (new instances)")))
 	lines.push(row())
-	lines.push(configRow("S", "Sound", defaults.sound, NOTIFY_ICONS.soundOn, NOTIFY_ICONS.soundOff))
-	lines.push(configRow("T", "Toast", defaults.toast, NOTIFY_ICONS.toastOn, NOTIFY_ICONS.toastOff))
+	lines.push(
+		configRow(
+			"S",
+			"Sound",
+			defaults.sound,
+			NOTIFY_ICONS.soundOn,
+			NOTIFY_ICONS.soundOff,
+		),
+	)
+	lines.push(
+		configRow(
+			"T",
+			"Toast",
+			defaults.toast,
+			NOTIFY_ICONS.toastOn,
+			NOTIFY_ICONS.toastOff,
+		),
+	)
 	lines.push(row())
 	lines.push(row())
 	lines.push(
-		row(`${key("x")} ${hint("test")}   ${key("d")} ${hint("save current")}   ${key("r")} ${hint("reset current")}`),
+		row(
+			`${key("x")} ${hint("test")}   ${key("d")} ${hint("save current")}   ${key("r")} ${hint("reset current")}`,
+		),
 	)
 	lines.push(row(hint("esc/q/enter close")))
 	if (status) {
@@ -447,7 +609,9 @@ function renderPanel(
 export default function notifyExtension(pi: ExtensionAPI) {
 	let defaults = readNotifyDefaults()
 	let current = initializeNotifyCurrentState(defaults)
-	let lastEnabledConfig: NotifyConfig = hasAnyNotifyChannel(current) ? current : defaults
+	let lastEnabledConfig: NotifyConfig = hasAnyNotifyChannel(current)
+		? current
+		: defaults
 	let terminalFocused = true
 	let cleanupFocusTracking: (() => void) | undefined
 	let retryAttempt = 0
@@ -455,7 +619,9 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	let notificationGeneration = 0
 	let pendingNotificationTimer: ReturnType<typeof setTimeout> | undefined
 	let pendingNotification: { title: string; body: string } | undefined
-	let pendingNotificationAfterCompaction: { title: string; body: string } | undefined
+	let pendingNotificationAfterCompaction:
+		| { title: string; body: string }
+		| undefined
 
 	const emitState = () => {
 		pi.events.emit("notify:changed", current)
@@ -467,7 +633,9 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		emitState()
 	}
 
-	const setDefaults = (next: NotifyConfig): { success: true } | { success: false; error: string } => {
+	const setDefaults = (
+		next: NotifyConfig,
+	): { success: true } | { success: false; error: string } => {
 		defaults = mergeNotifyConfig(next, defaults)
 		const result = writeNotifyDefaults(defaults)
 		return result
@@ -480,7 +648,11 @@ export default function notifyExtension(pi: ExtensionAPI) {
 			return
 		}
 
-		setCurrent(hasAnyNotifyChannel(lastEnabledConfig) ? lastEnabledConfig : { sound: false, toast: true })
+		setCurrent(
+			hasAnyNotifyChannel(lastEnabledConfig)
+				? lastEnabledConfig
+				: { sound: false, toast: true },
+		)
 	}
 
 	const clearPendingNotification = () => {
@@ -491,7 +663,11 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		pendingNotificationAfterCompaction = undefined
 	}
 
-	const scheduleNotification = (ctx: ExtensionContext, title: string, body: string) => {
+	const scheduleNotification = (
+		ctx: ExtensionContext,
+		title: string,
+		body: string,
+	) => {
 		const token = ++notificationGeneration
 		if (pendingNotificationTimer) clearTimeout(pendingNotificationTimer)
 		pendingNotification = { title, body }
@@ -499,7 +675,13 @@ export default function notifyExtension(pi: ExtensionAPI) {
 			pendingNotificationTimer = undefined
 			pendingNotification = undefined
 			if (token !== notificationGeneration) return
-			if (!ctx.hasUI || terminalFocused || !ctx.isIdle() || ctx.hasPendingMessages()) return
+			if (
+				!ctx.hasUI ||
+				terminalFocused ||
+				!ctx.isIdle() ||
+				ctx.hasPendingMessages()
+			)
+				return
 			fireNotification(current, title, body)
 		}, NOTIFICATION_SETTLE_DELAY_MS)
 	}
@@ -519,7 +701,11 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		clearPendingNotification()
 	}
 
-	const shouldSuppressTransientError = (message: AssistantRecord, event: unknown, ctx: ExtensionContext): boolean => {
+	const shouldSuppressTransientError = (
+		message: AssistantRecord,
+		event: unknown,
+		ctx: ExtensionContext,
+	): boolean => {
 		if (asObject(event)?.willRetry === true) {
 			retryAttempt++
 			return true
@@ -559,48 +745,78 @@ export default function notifyExtension(pi: ExtensionAPI) {
 						return renderPanel(width, theme, current, defaults, status)
 					},
 					handleInput(data: string): void {
-						if (matchesKey(data, "escape") || matchesKey(data, "return") || data === "q") {
+						if (
+							matchesKey(data, "escape") ||
+							matchesKey(data, "return") ||
+							data === "q"
+						) {
 							done()
 							return
 						}
 
 						if (data === "s") {
 							setCurrent({ ...current, sound: !current.sound })
-							updateStatus(`Current sound ${current.sound ? "on" : "off"}`)
+							updateStatus(
+								`Current sound ${current.sound ? "on" : "off"}`,
+							)
 							return
 						}
 
 						if (data === "t") {
 							setCurrent({ ...current, toast: !current.toast })
-							updateStatus(`Current toast ${current.toast ? "on" : "off"}`)
+							updateStatus(
+								`Current toast ${current.toast ? "on" : "off"}`,
+							)
 							return
 						}
 
 						if (data === "S") {
-							const result = setDefaults({ ...defaults, sound: !defaults.sound })
+							const result = setDefaults({
+								...defaults,
+								sound: !defaults.sound,
+							})
 							updateStatus(
-								result.success ? `Default sound ${defaults.sound ? "on" : "off"}` : `Failed: ${result.error}`,
+								result.success
+									? `Default sound ${defaults.sound ? "on" : "off"}`
+									: `Failed: ${result.error}`,
 							)
 							return
 						}
 
 						if (data === "T") {
-							const result = setDefaults({ ...defaults, toast: !defaults.toast })
+							const result = setDefaults({
+								...defaults,
+								toast: !defaults.toast,
+							})
 							updateStatus(
-								result.success ? `Default toast ${defaults.toast ? "on" : "off"}` : `Failed: ${result.error}`,
+								result.success
+									? `Default toast ${defaults.toast ? "on" : "off"}`
+									: `Failed: ${result.error}`,
 							)
 							return
 						}
 
 						if (data === "x") {
-							const fired = fireNotification(current, TOAST_TITLE, `${cwdSegment(ctx.cwd)}\nTest notification`)
-							updateStatus(fired ? `Test fired: ${describeConfig(current)}` : "Test skipped: notifications off")
+							const fired = fireNotification(
+								current,
+								TOAST_TITLE,
+								`${cwdSegment(ctx.cwd)}\nTest notification`,
+							)
+							updateStatus(
+								fired
+									? `Test fired: ${describeConfig(current)}`
+									: "Test skipped: notifications off",
+							)
 							return
 						}
 
 						if (data === "d") {
 							const result = setDefaults(current)
-							updateStatus(result.success ? "Saved current as defaults" : `Failed: ${result.error}`)
+							updateStatus(
+								result.success
+									? "Saved current as defaults"
+									: `Failed: ${result.error}`,
+							)
 							return
 						}
 
@@ -638,9 +854,15 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		}
 
 		if (normalized === "test") {
-			const fired = fireNotification(current, TOAST_TITLE, `${cwdSegment(ctx.cwd)}\nTest notification`)
+			const fired = fireNotification(
+				current,
+				TOAST_TITLE,
+				`${cwdSegment(ctx.cwd)}\nTest notification`,
+			)
 			ctx.ui.notify(
-				fired ? `Notify test fired: ${describeConfig(current)}` : "Notify test skipped: notifications off",
+				fired
+					? `Notify test fired: ${describeConfig(current)}`
+					: "Notify test skipped: notifications off",
 				"info",
 			)
 			return
@@ -659,12 +881,18 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		}
 
 		const [target, action = "toggle"] = normalized.split(/\s+/, 2)
-		if ((target === "sound" || target === "toast") && (action === "on" || action === "off" || action === "toggle")) {
+		if (
+			(target === "sound" || target === "toast") &&
+			(action === "on" || action === "off" || action === "toggle")
+		) {
 			setCurrent({
 				...current,
 				[target]: action === "toggle" ? !current[target] : action === "on",
 			})
-			ctx.ui.notify(`Notify ${target}: ${current[target] ? "on" : "off"}`, "info")
+			ctx.ui.notify(
+				`Notify ${target}: ${current[target] ? "on" : "off"}`,
+				"info",
+			)
 			return
 		}
 
@@ -684,8 +912,8 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		cleanupFocusTracking?.()
 		cleanupFocusTracking = ctx.hasUI
 			? enableTerminalFocusTracking((focused) => {
-				terminalFocused = focused
-			})
+					terminalFocused = focused
+				})
 			: undefined
 		emitState()
 	})
@@ -712,7 +940,8 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	pi.on("session_compact", (_event, ctx) => {
 		const notification = pendingNotificationAfterCompaction
 		pendingNotificationAfterCompaction = undefined
-		if (notification) scheduleNotification(ctx, notification.title, notification.body)
+		if (notification)
+			scheduleNotification(ctx, notification.title, notification.body)
 	})
 
 	pi.on("agent_end", async (event, ctx: ExtensionContext) => {
@@ -724,7 +953,11 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		if (assistant?.stopReason === "error") {
 			if (shouldSuppressTransientError(assistant, event, ctx)) return
 			retryAttempt = 0
-			scheduleNotification(ctx, ERROR_TOAST_TITLE, errorToastBody(ctx, assistant))
+			scheduleNotification(
+				ctx,
+				ERROR_TOAST_TITLE,
+				errorToastBody(ctx, assistant),
+			)
 			return
 		}
 

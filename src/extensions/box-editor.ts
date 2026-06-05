@@ -1,17 +1,29 @@
 /**
-	* Box Editor — wraps the input editor in a rounded-corner box
-	* with contextual labels embedded in the border lines.
-	*
-	* Top-left:     shell mode
-	* Top-right:    context usage · model · thinking / notify / fast indicators
-	* Bottom-right: git branch · ~/cwd
-	*
-	* Usage: loaded via the pi-tools root package.
-	*/
+ * Box Editor — wraps the input editor in a rounded-corner box
+ * with contextual labels embedded in the border lines.
+ *
+ * Top-left:     shell mode
+ * Top-right:    context usage · model · thinking / notify / fast indicators
+ * Bottom-right: git branch · ~/cwd
+ *
+ * Usage: loaded via the pi-tools root package.
+ */
 
-import { CustomEditor, type ExtensionAPI, type KeybindingsManager } from "@earendil-works/pi-coding-agent"
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
-import { getNotifyCurrentState, NOTIFY_ICONS, type NotifyConfig } from "../lib/notify-state"
+import {
+	CustomEditor,
+	type ExtensionAPI,
+	type KeybindingsManager,
+} from "@earendil-works/pi-coding-agent"
+import {
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui"
+import {
+	getNotifyCurrentState,
+	NOTIFY_ICONS,
+	type NotifyConfig,
+} from "../lib/notify-state"
 
 type TUI = any
 type EditorTheme = any
@@ -53,7 +65,8 @@ function buildThinkingIndicator(theme: any, model: any, level: string): string {
 	const filled = thinkingFill(level)
 	let out = ""
 	for (let i = 0; i < THINKING_DOTS; i++) {
-		out += i < filled ? theme.bold(theme.fg("accent", "●")) : theme.fg("dim", "○")
+		out +=
+			i < filled ? theme.bold(theme.fg("accent", "●")) : theme.fg("dim", "○")
 	}
 	return out
 }
@@ -74,22 +87,34 @@ function buildNotifyIndicator(theme: any, state: NotifyConfig): string {
 }
 
 const FAST_MODE_STATE_ENTRY_TYPE = "fast-mode-state"
+// Box-drawing vertical lines are centered in their cell. U+2595 renders on the
+// right edge of the cell, which makes the editor rail look flush with the container.
+const RIGHT_EDGE_RAIL = "▕"
 
 function readFastModeState(ctx: any): { active: boolean; serviceTier: string } {
 	const lastState = ctx.sessionManager
 		.getEntries()
-		.filter((entry: { type?: string; customType?: string }) => entry.type === "custom" && entry.customType === FAST_MODE_STATE_ENTRY_TYPE)
-		.pop() as { data?: { active?: unknown; serviceTier?: unknown } } | undefined
+		.filter(
+			(entry: { type?: string; customType?: string }) =>
+				entry.type === "custom" &&
+				entry.customType === FAST_MODE_STATE_ENTRY_TYPE,
+		)
+		.pop() as
+		| { data?: { active?: unknown; serviceTier?: unknown } }
+		| undefined
 
 	return {
 		active: lastState?.data?.active === true,
-		serviceTier: typeof lastState?.data?.serviceTier === "string" ? lastState.data.serviceTier : "priority",
+		serviceTier:
+			typeof lastState?.data?.serviceTier === "string"
+				? lastState.data.serviceTier
+				: "priority",
 	}
 }
 
 /**
-	* Build a horizontal border line with rounded corners and optional labels.
-	*/
+ * Build a horizontal border line with rounded corners and optional labels.
+ */
 function buildBorder(
 	bc: (s: string) => string,
 	width: number,
@@ -98,14 +123,18 @@ function buildBorder(
 	leftLabel: string,
 	rightLabel: string,
 ): string {
+	const tint = (text: string) => (text ? bc(text) : "")
 	const leftVW = visibleWidth(leftLabel)
 	const rightVW = visibleWidth(rightLabel)
-	const inner = width - 2
+	const inner = Math.max(
+		0,
+		width - visibleWidth(leftCorner) - visibleWidth(rightCorner),
+	)
 
 	const leftSeg = leftVW > 0 ? leftVW + 3 : 0
 	const rightSeg = rightVW > 0 ? rightVW + 3 : 0
 	if (leftSeg + rightSeg + 1 > inner) {
-		return bc(leftCorner + "─".repeat(inner) + rightCorner)
+		return tint(leftCorner + "─".repeat(inner) + rightCorner)
 	}
 
 	let mid = ""
@@ -123,7 +152,14 @@ function buildBorder(
 		mid += bc("─".repeat(rem))
 	}
 
-	return clampToWidth(bc(leftCorner) + mid + bc(rightCorner), width)
+	return clampToWidth(tint(leftCorner) + mid + tint(rightCorner), width)
+}
+
+function fitLineToWidth(line: string, width: number): string {
+	const lineWidth = visibleWidth(line)
+	if (lineWidth === width) return line
+	if (lineWidth > width) return truncateToWidth(line, width, "")
+	return line + " ".repeat(width - lineWidth)
 }
 
 function buildOpenBottomRight(
@@ -131,14 +167,16 @@ function buildOpenBottomRight(
 	width: number,
 	rightLabel: string,
 ): string {
-	const inner = width - 2
 	const rightVW = visibleWidth(rightLabel)
-	const rightSeg = rightVW > 0 ? rightVW + 3 : 2 // " label ─╯" or "─╯"
-	const fill = Math.max(0, inner - rightSeg)
+	const rightSeg = rightVW > 0 ? rightVW + 4 : 2 // " label ─╯" or "─╯"
+	const fill = Math.max(0, width - rightSeg)
 	if (rightVW > 0) {
-		return clampToWidth(" " + " ".repeat(fill) + " " + rightLabel + " " + bc("─╯"), width)
+		return clampToWidth(
+			" ".repeat(fill) + " " + rightLabel + " " + bc("─" + RIGHT_EDGE_RAIL),
+			width,
+		)
 	}
-	return clampToWidth(" " + " ".repeat(fill) + bc("─╯"), width)
+	return clampToWidth(" ".repeat(fill) + bc("─" + RIGHT_EDGE_RAIL), width)
 }
 
 // ── BoxEditor ───────────────────────────────────────────────
@@ -173,7 +211,9 @@ class BoxEditor extends CustomEditor {
 		tui.setShowHardwareCursor(true)
 	}
 
-	private getLabelWithFallback(key: "topLeft" | "topRight" | "bottomRight"): string {
+	private getLabelWithFallback(
+		key: "topLeft" | "topRight" | "bottomRight",
+	): string {
 		try {
 			const value = this.labels[key]()
 			if (key === "topLeft") this.cachedTopLeft = value
@@ -205,8 +245,8 @@ class BoxEditor extends CustomEditor {
 	override render(width: number): string[] {
 		if (width < 6) return super.render(width)
 
-		const innerWidth = width - 1
-		const lines = super.render(innerWidth)
+		const contentWidth = width - 1
+		const lines = super.render(width)
 		if (lines.length < 2) return lines
 
 		for (let i = 0; i < lines.length; i++) {
@@ -230,16 +270,18 @@ class BoxEditor extends CustomEditor {
 		const content = lines.slice(1, bottomIdx)
 		const result: string[] = []
 
-		result.push(buildBorder(bc, width, " ", "╮", topLeft, topRight))
+		result.push(
+			buildBorder(bc, width, "", RIGHT_EDGE_RAIL, topLeft, topRight),
+		)
 
-		const rb = bc("│")
-		const padLine = " ".repeat(innerWidth) + rb
+		const rb = bc(RIGHT_EDGE_RAIL)
+		const padLine = " ".repeat(contentWidth) + rb
 
 		// Top padding line
 		result.push(padLine)
 
 		for (const line of content) {
-			result.push(line + rb)
+			result.push(fitLineToWidth(line, contentWidth) + rb)
 		}
 
 		// Bottom padding line
@@ -268,15 +310,24 @@ class BoxEditor extends CustomEditor {
 
 export default function (pi: ExtensionAPI) {
 	let latestTui: TUI | undefined
-	let fastModeState: { active: boolean; serviceTier: string } = { active: false, serviceTier: "priority" }
-	let notifyState: NotifyConfig = getNotifyCurrentState() ?? { sound: false, toast: true }
+	let fastModeState: { active: boolean; serviceTier: string } = {
+		active: false,
+		serviceTier: "priority",
+	}
+	let notifyState: NotifyConfig = getNotifyCurrentState() ?? {
+		sound: false,
+		toast: true,
+	}
 	let btwVisible = false
 
 	pi.events.on("fast-mode:changed", (data) => {
 		const next = data as { active?: unknown; serviceTier?: unknown }
 		fastModeState = {
 			active: next.active === true,
-			serviceTier: typeof next.serviceTier === "string" ? next.serviceTier : fastModeState.serviceTier,
+			serviceTier:
+				typeof next.serviceTier === "string"
+					? next.serviceTier
+					: fastModeState.serviceTier,
 		}
 		latestTui?.requestRender()
 	})
@@ -339,70 +390,87 @@ export default function (pi: ExtensionAPI) {
 
 		ctx.ui.setEditorComponent((tui, editorTheme, kb) => {
 			latestTui = tui
-			const editor = new BoxEditor(tui, editorTheme, kb, {
-				topLeft() {
-					const t = getTheme()
-					if (editorRef && editorRef.getText().trimStart().startsWith("!")) {
-						return t.fg("muted", "shell mode")
-					}
-					return ""
+			const editor = new BoxEditor(
+				tui,
+				editorTheme,
+				kb,
+				{
+					topLeft() {
+						const t = getTheme()
+						if (
+							editorRef &&
+							editorRef.getText().trimStart().startsWith("!")
+						) {
+							return t.fg("muted", "shell mode")
+						}
+						return ""
+					},
+
+					topRight() {
+						const t = getTheme()
+						const model = ctx.model
+						const usage = ctx.getContextUsage()
+						const ctxWindow =
+							usage?.contextWindow ?? model?.contextWindow ?? 0
+						const pct = usage?.percent
+						let ctxStr: string
+						if (pct !== null && pct !== undefined) {
+							const raw = `${pct.toFixed(0)}% / ${formatTokens(ctxWindow)}`
+							if (pct > 90) ctxStr = t.fg("error", raw)
+							else if (pct > 70) ctxStr = t.fg("warning", raw)
+							else ctxStr = t.fg("muted", raw)
+						} else {
+							ctxStr = t.fg("muted", `? / ${formatTokens(ctxWindow)}`)
+						}
+
+						const modelId = model?.id || "no-model"
+						const level = pi.getThinkingLevel()
+						const fastModeVisible = Boolean(fastModeState.active)
+						const indicator = buildThinkingIndicator(t, model, level)
+						const fastBadge = buildFastModeBadge(t, fastModeVisible)
+						const notifyIndicator = buildNotifyIndicator(t, notifyState)
+						const modelPart =
+							t.fg("muted", modelId) +
+							(indicator
+								? t.fg("dim", " [") + indicator + t.fg("dim", "]")
+								: "") +
+							t.fg("dim", " ") +
+							notifyIndicator
+
+						return (
+							ctxStr +
+							(fastBadge ? t.fg("dim", " · ") + fastBadge : "") +
+							t.fg("dim", " · ") +
+							modelPart
+						)
+					},
+
+					bottomRight() {
+						const t = getTheme()
+						let pwd = ctx.cwd
+						const home = process.env.HOME || process.env.USERPROFILE
+						if (home && pwd.startsWith(home)) {
+							pwd = `~${pwd.slice(home.length)}`
+						}
+						if (gitBranch) {
+							return (
+								t.fg("muted", gitBranch) +
+								t.fg("dim", " · ") +
+								t.fg("muted", pwd)
+							)
+						}
+						return t.fg("muted", pwd)
+					},
 				},
-
-				topRight() {
-					const t = getTheme()
-					const model = ctx.model
-					const usage = ctx.getContextUsage()
-					const ctxWindow = usage?.contextWindow ?? model?.contextWindow ?? 0
-					const pct = usage?.percent
-					let ctxStr: string
-					if (pct !== null && pct !== undefined) {
-						const raw = `${pct.toFixed(0)}% / ${formatTokens(ctxWindow)}`
-						if (pct > 90) ctxStr = t.fg("error", raw)
-						else if (pct > 70) ctxStr = t.fg("warning", raw)
-						else ctxStr = t.fg("muted", raw)
-					} else {
-						ctxStr = t.fg("muted", `? / ${formatTokens(ctxWindow)}`)
-					}
-
-					const modelId = model?.id || "no-model"
-					const level = pi.getThinkingLevel()
-					const fastModeVisible = Boolean(fastModeState.active)
-					const indicator = buildThinkingIndicator(t, model, level)
-					const fastBadge = buildFastModeBadge(t, fastModeVisible)
-					const notifyIndicator = buildNotifyIndicator(t, notifyState)
-					const modelPart =
-						t.fg("muted", modelId) +
-						(indicator ? t.fg("dim", " [") + indicator + t.fg("dim", "]") : "") +
-						t.fg("dim", " ") +
-						notifyIndicator
-
-					return (
-						ctxStr +
-						(fastBadge ? t.fg("dim", " · ") + fastBadge : "") +
-						t.fg("dim", " · ") +
-						modelPart
-					)
+				(s: string) => getTheme().fg("muted", s),
+				() => {
+					if (!btwVisible) return false
+					pi.events.emit("btw:clear", { source: "escape" })
+					// Consume Escape whenever it clears /btw. If the main agent is streaming,
+					// a second Escape after /btw is gone can still interrupt it intentionally.
+					return true
 				},
-
-				bottomRight() {
-					const t = getTheme()
-					let pwd = ctx.cwd
-					const home = process.env.HOME || process.env.USERPROFILE
-					if (home && pwd.startsWith(home)) {
-						pwd = `~${pwd.slice(home.length)}`
-					}
-					if (gitBranch) {
-						return t.fg("muted", gitBranch) + t.fg("dim", " · ") + t.fg("muted", pwd)
-					}
-					return t.fg("muted", pwd)
-				},
-			}, (s: string) => getTheme().fg("muted", s), () => {
-				if (!btwVisible) return false
-				pi.events.emit("btw:clear", { source: "escape" })
-				// Consume Escape whenever it clears /btw. If the main agent is streaming,
-				// a second Escape after /btw is gone can still interrupt it intentionally.
-				return true
-			})
+			)
 
 			editorRef = editor
 			return editor

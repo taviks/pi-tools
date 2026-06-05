@@ -9,9 +9,16 @@ const DEFAULT_TAIL_LINES = 25
 const MAX_TAIL_CHARS = 8_000
 const TEMP_PREFIX = "pi-bash-output"
 
-const KEEP_OUTPUT_PATTERNS = [/\bPI_KEEP_OUTPUT=1\b/, /#\s*pi:\s*keep[-\s]?output\b/i, /#\s*pi:\s*full[-\s]?output\b/i]
+const KEEP_OUTPUT_PATTERNS = [
+	/\bPI_KEEP_OUTPUT=1\b/,
+	/#\s*pi:\s*keep[-\s]?output\b/i,
+	/#\s*pi:\s*full[-\s]?output\b/i,
+]
 
-const FORCE_COMPRESS_PATTERNS = [/\bPI_COMPRESS_OUTPUT=1\b/, /#\s*pi:\s*compress[-\s]?output\b/i]
+const FORCE_COMPRESS_PATTERNS = [
+	/\bPI_COMPRESS_OUTPUT=1\b/,
+	/#\s*pi:\s*compress[-\s]?output\b/i,
+]
 
 const KNOWN_NOISY_SUCCESS_PATTERNS = [
 	/\bnpm\s+run(?:\s+-\S+)*\s+[^\n;&|]*(?:build|test|lint|review|regression|typecheck|format|check|elmPages)/i,
@@ -42,19 +49,27 @@ function commandHasPattern(command: string, patterns: RegExp[]): boolean {
 	return patterns.some((pattern) => pattern.test(command))
 }
 
-function shouldCompressSuccessfulOutput(command: string, output: string): boolean {
+function shouldCompressSuccessfulOutput(
+	command: string,
+	output: string,
+): boolean {
 	if (compressionDisabled()) return false
 	if (!output.trim()) return false
 	if (commandHasPattern(command, KEEP_OUTPUT_PATTERNS)) return false
 
 	const force = commandHasPattern(command, FORCE_COMPRESS_PATTERNS)
-	const minChars = envInt("PI_BASH_OUTPUT_COMPRESSION_MIN_CHARS", DEFAULT_MIN_OUTPUT_CHARS)
+	const minChars = envInt(
+		"PI_BASH_OUTPUT_COMPRESSION_MIN_CHARS",
+		DEFAULT_MIN_OUTPUT_CHARS,
+	)
 	if (!force && output.length < minChars) return false
 
 	return force || commandHasPattern(command, KNOWN_NOISY_SUCCESS_PATTERNS)
 }
 
-function textFromContent(content: Array<{ type: string; text?: string }>): string | null {
+function textFromContent(
+	content: Array<{ type: string; text?: string }>,
+): string | null {
 	const textParts = content
 		.filter((part) => part.type === "text" && typeof part.text === "string")
 		.map((part) => part.text ?? "")
@@ -105,8 +120,15 @@ function commandPreview(command: string): string {
 	return `${singleLine.slice(0, 177)}...`
 }
 
-function buildCompressedMessage(command: string, output: string, fullOutputPath: string | null): string {
-	const tailLineCount = envInt("PI_BASH_OUTPUT_COMPRESSION_TAIL_LINES", DEFAULT_TAIL_LINES)
+function buildCompressedMessage(
+	command: string,
+	output: string,
+	fullOutputPath: string | null,
+): string {
+	const tailLineCount = envInt(
+		"PI_BASH_OUTPUT_COMPRESSION_TAIL_LINES",
+		DEFAULT_TAIL_LINES,
+	)
 	const outputBytes = Buffer.byteLength(output, "utf8")
 	const outputLines = lineCount(output)
 	const tail = tailLines(output, tailLineCount)
@@ -134,14 +156,18 @@ export default function bashOutputCompressionExtension(pi: ExtensionAPI) {
 		if (!isBashToolResult(event)) return
 		if (event.isError) return
 
-		const command = typeof event.input.command === "string" ? event.input.command : ""
+		const command =
+			typeof event.input.command === "string" ? event.input.command : ""
 		if (!command) return
 
-		const output = textFromContent(event.content as Array<{ type: string; text?: string }>)
+		const output = textFromContent(
+			event.content as Array<{ type: string; text?: string }>,
+		)
 		if (output === null) return
 		if (!shouldCompressSuccessfulOutput(command, output)) return
 
-		const fullOutputPath = event.details?.fullOutputPath ?? writeFullOutput(output)
+		const fullOutputPath =
+			event.details?.fullOutputPath ?? writeFullOutput(output)
 		const compressed = buildCompressedMessage(command, output, fullOutputPath)
 
 		return {

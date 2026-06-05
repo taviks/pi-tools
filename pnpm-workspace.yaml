@@ -1,5 +1,5 @@
 packages:
-  - "packages/*"
+   - "packages/*"
 
 overrides:
-  "@mariozechner/clipboard": "0.3.6"
+   "@mariozechner/clipboard": "0.3.6"

@@ -44,10 +44,11 @@ Use Node.js 20+ and the root pnpm workspace for local checks:
 corepack enable
 pnpm install
 pnpm -s check:layout
+pnpm -s format:check
 pnpm -s typecheck
 ```
 
-`check:layout` verifies the expected package/config directories and JSON templates. `typecheck` runs TypeScript across the root extensions and companion packages.
+`check:layout` verifies the expected package/config directories and JSON templates. `format:check` verifies Prettier formatting with the repo's VS Code-compatible defaults. `typecheck` runs TypeScript across the root extensions and companion packages.
 
 ## What's in the root package
 
@@ -70,13 +71,15 @@ The root package includes a tiny explicit memory layer backed by Markdown files 
 /memory reject 2
 /memory search markdown memory
 /memory recent
+/memory dedupe
+/memory merge ~/.pi/agent/memory/global/example.md Add the new durable detail here.
 ```
 
-Memory types: `decision`, `learning`, `preference`, `solution`, `pattern`, `pitfall`. Short aliases are available: `/memory add-decision`, `/memory add-learning`, `/memory add-preference`, `/memory add-solution`, `/memory add-pattern`, `/memory add-pitfall`.
+Memory types: `decision`, `learning`, `preference`, `solution`, `pattern`, `pitfall`. Short aliases are available: `/memory add-decision`, `/memory add-learning`, `/memory add-preference`, `/memory add-solution`, `/memory add-pattern`, `/memory add-pitfall`. If a duplicate warning is a false positive, `/memory add ... --allow-duplicate` can intentionally create a separate record.
 
 Scope defaults are intentionally simple: `preference` defaults to global memory; all other types default to project/workspace memory. Override with `--global` or `--project`.
 
-LLM-callable tools `memory_search` and `memory_capture` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. The memory extension also injects a small per-turn protocol and relevant local memory snippets for substantial debugging/planning/review/architecture prompts. Inferred memories are queued silently by default; post-run reminder widgets are opt-in with `/memory reminder on` or `PI_MEMORY_REMINDER=1`.
+LLM-callable tools `memory_search`, `memory_capture`, and `memory_merge` are available for durable decisions, preferences, solved problems, reusable patterns, and pitfalls. `memory_capture` blocks likely duplicates by default and points at the existing memory; merge durable new details into that target with `memory_merge` or `/memory merge` rather than creating a parallel record. The memory extension also injects a small per-turn protocol and relevant local memory snippets for substantial debugging/planning/review/architecture prompts. Inferred memories are queued silently by default; post-run reminder widgets are opt-in with `/memory reminder on` or `PI_MEMORY_REMINDER=1`.
 
 Use `/memory pending` to review passively queued candidates, or `/memory harvest` after a completed run to scan the last run on demand. Use `/memory show <number|all>` for details, `/memory accept <number|all>` to save selected candidates through the same validation and secret checks as manual capture, and `/memory reject <number|all>` to discard low-value candidates. Memory capture remains explicit; there is no always-on entity detector, cron, or embedding dependency.
 

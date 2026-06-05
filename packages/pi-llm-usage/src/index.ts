@@ -1,5 +1,13 @@
-import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent"
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	Theme,
+} from "@earendil-works/pi-coding-agent"
+import {
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui"
 import {
 	fetchAnthropicUsage,
 	fetchCodexUsage,
@@ -18,7 +26,10 @@ export default function (pi: ExtensionAPI) {
 					let results: ProviderUsage[] = []
 					const controller = new AbortController()
 
-					Promise.all([fetchAnthropicUsage(controller.signal), fetchCodexUsage(controller.signal)])
+					Promise.all([
+						fetchAnthropicUsage(controller.signal),
+						fetchCodexUsage(controller.signal),
+					])
 						.then((r) => {
 							results = r
 							state = "done"
@@ -34,7 +45,11 @@ export default function (pi: ExtensionAPI) {
 							return renderPanel(width, theme, state, results)
 						},
 						handleInput(data: string): void {
-							if (matchesKey(data, "escape") || matchesKey(data, "return") || data === "q") {
+							if (
+								matchesKey(data, "escape") ||
+								matchesKey(data, "return") ||
+								data === "q"
+							) {
 								controller.abort()
 								done()
 							}
@@ -90,7 +105,8 @@ function renderPanel(
 		)
 	}
 
-	const emptyRow = () => theme.fg("border", "│") + " ".repeat(innerW) + theme.fg("border", "│")
+	const emptyRow = () =>
+		theme.fg("border", "│") + " ".repeat(innerW) + theme.fg("border", "│")
 
 	const addVerticalPad = (n: number) => {
 		for (let i = 0; i < n; i++) lines.push(emptyRow())
@@ -108,23 +124,37 @@ function renderPanel(
 		let sharedLabelWidth = 0
 		for (let i = 0; i < results.length; i++) {
 			for (let j = 0; j < results[i]!.windows.length; j++) {
-				sharedLabelWidth = Math.max(sharedLabelWidth, results[i]!.windows[j]!.label.length)
+				sharedLabelWidth = Math.max(
+					sharedLabelWidth,
+					results[i]!.windows[j]!.label.length,
+				)
 			}
 		}
 
 		for (let i = 0; i < results.length; i++) {
 			const result = results[i]!
-			const providerLabel = result.plan ? `${result.provider} (${result.plan})` : result.provider
+			const providerLabel = result.plan
+				? `${result.provider} (${result.plan})`
+				: result.provider
 			const linksStr = renderLinks(result.links, theme)
 			const lw = linksVisibleWidth(result.links)
 			const providerLabelWidth = visibleWidth(providerLabel)
 
 			// Keep account right-aligned with the link/button cluster, not attached to provider label.
-			const accountMaxWidth = Math.max(0, Math.min(40, contentArea - providerLabelWidth - lw - 2))
+			const accountMaxWidth = Math.max(
+				0,
+				Math.min(40, contentArea - providerLabelWidth - lw - 2),
+			)
 			const accountPart =
-				result.account && accountMaxWidth > 2 ? `(${fitTextEnd(result.account, accountMaxWidth - 2)})` : ""
-			const rightClusterWidth = lw + (accountPart ? visibleWidth(accountPart) + 1 : 0)
-			const gap = Math.max(1, contentArea - providerLabelWidth - rightClusterWidth)
+				result.account && accountMaxWidth > 2
+					? `(${fitTextEnd(result.account, accountMaxWidth - 2)})`
+					: ""
+			const rightClusterWidth =
+				lw + (accountPart ? visibleWidth(accountPart) + 1 : 0)
+			const gap = Math.max(
+				1,
+				contentArea - providerLabelWidth - rightClusterWidth,
+			)
 			lines.push(
 				row(
 					theme.fg("accent", theme.bold(providerLabel)) +
@@ -142,7 +172,16 @@ function renderPanel(
 				lines.push(row(theme.fg("muted", "No usage data available")))
 			} else {
 				for (let j = 0; j < result.windows.length; j++) {
-					lines.push(row(renderUsageRow(result.windows[j]!, sharedLabelWidth, innerW - 2, theme)))
+					lines.push(
+						row(
+							renderUsageRow(
+								result.windows[j]!,
+								sharedLabelWidth,
+								innerW - 2,
+								theme,
+							),
+						),
+					)
 				}
 			}
 
@@ -158,12 +197,22 @@ function renderPanel(
 	const footerRightWidth = visibleWidth(footerRight)
 	const footerLeftMax = Math.max(0, contentArea - footerRightWidth - 1)
 	const footerLeftLabel = fitTextEnd("[star/fork]", footerLeftMax)
-	const footerLeft = footerLeftLabel ? hyperlink("https://github.com/your-org/pi-tools/tree/main/packages/pi-llm-usage", footerLeftLabel) : ""
+	const footerLeft = footerLeftLabel
+		? hyperlink(
+				"https://github.com/your-org/pi-tools/tree/main/packages/pi-llm-usage",
+				footerLeftLabel,
+			)
+		: ""
 	const footerLeftWidth = footerLeftLabel.length
-	const footerGap = Math.max(0, contentArea - footerLeftWidth - footerRightWidth)
+	const footerGap = Math.max(
+		0,
+		contentArea - footerLeftWidth - footerRightWidth,
+	)
 	lines.push(
 		rowExact(
-			theme.fg("dim", footerLeft) + " ".repeat(footerGap) + theme.fg("dim", footerRight),
+			theme.fg("dim", footerLeft) +
+				" ".repeat(footerGap) +
+				theme.fg("dim", footerRight),
 			footerLeftWidth + footerGap + footerRightWidth,
 		),
 	)
@@ -176,7 +225,10 @@ function renderPanel(
 function renderLinks(links: ProviderLink[], theme: Theme): string {
 	return links
 		.map((l) => {
-			const label = theme.fg("dim", "[") + theme.fg("muted", l.label) + theme.fg("dim", "]")
+			const label =
+				theme.fg("dim", "[") +
+				theme.fg("muted", l.label) +
+				theme.fg("dim", "]")
 			return hyperlink(l.url, label)
 		})
 		.join(" ")
@@ -186,7 +238,9 @@ function renderLinks(links: ProviderLink[], theme: Theme): string {
 function linksVisibleWidth(links: ProviderLink[]): number {
 	if (links.length === 0) return 0
 	// Each link renders as "[label]", joined by " "
-	return links.reduce((sum, l) => sum + l.label.length + 2, 0) + (links.length - 1)
+	return (
+		links.reduce((sum, l) => sum + l.label.length + 2, 0) + (links.length - 1)
+	)
 }
 
 function fitTextEnd(text: string, maxLength: number): string {
@@ -199,7 +253,12 @@ function hyperlink(url: string, text: string): string {
 	return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`
 }
 
-function renderUsageRow(win: UsageWindow, labelWidth: number, maxWidth: number, theme: Theme): string {
+function renderUsageRow(
+	win: UsageWindow,
+	labelWidth: number,
+	maxWidth: number,
+	theme: Theme,
+): string {
 	const remaining = 100 - win.percentUsed
 
 	// Color based on how much is LEFT

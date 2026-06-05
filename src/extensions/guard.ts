@@ -1,7 +1,11 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+} from "@earendil-works/pi-coding-agent"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 interface GuardState {
@@ -9,7 +13,11 @@ interface GuardState {
 }
 
 interface Finding {
-	kind: "destructive-command" | "protected-path" | "freeze-boundary" | "temp-symlink-escape"
+	kind:
+		| "destructive-command"
+		| "protected-path"
+		| "freeze-boundary"
+		| "temp-symlink-escape"
 	reason: string
 }
 
@@ -33,22 +41,60 @@ function safeRealpath(inputPath: string): string {
 	}
 }
 
-const TEMP_ROOTS = Array.from(new Set([os.tmpdir(), "/tmp", "/private/tmp"].map((root) => safeRealpath(root))))
+const TEMP_ROOTS = Array.from(
+	new Set(
+		[os.tmpdir(), "/tmp", "/private/tmp"].map((root) => safeRealpath(root)),
+	),
+)
 
 const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-	{ pattern: /\brm\s+(-[^\n;&|]*r|--recursive)\b/i, reason: "recursive delete" },
-	{ pattern: /\brm\s+-[^\n;&|]*f[^\n;&|]*\s+(\/(?:\s|$)|~(?:\s|\/|$)|\$HOME(?:\s|\/|$)|[^ \n;&|]*[*?\[\]{}][^ \n;&|]*)/i, reason: "force delete of a broad path" },
+	{
+		pattern: /\brm\s+(-[^\n;&|]*r|--recursive)\b/i,
+		reason: "recursive delete",
+	},
+	{
+		pattern:
+			/\brm\s+-[^\n;&|]*f[^\n;&|]*\s+(\/(?:\s|$)|~(?:\s|\/|$)|\$HOME(?:\s|\/|$)|[^ \n;&|]*[*?\[\]{}][^ \n;&|]*)/i,
+		reason: "force delete of a broad path",
+	},
 	{ pattern: /\bsudo\b/i, reason: "privileged command" },
-	{ pattern: /\bchmod\b[^\n;&|]*(777|-R|--recursive)/i, reason: "broad permission change" },
-	{ pattern: /\bchown\b[^\n;&|]*(-R|--recursive)/i, reason: "recursive ownership change" },
+	{
+		pattern: /\bchmod\b[^\n;&|]*(777|-R|--recursive)/i,
+		reason: "broad permission change",
+	},
+	{
+		pattern: /\bchown\b[^\n;&|]*(-R|--recursive)/i,
+		reason: "recursive ownership change",
+	},
 	{ pattern: /\bgit\s+reset\s+--hard\b/i, reason: "discarding git work" },
-	{ pattern: /\bgit\s+clean\s+-[^\n;&|]*[df][^\n;&|]*[df]?\b/i, reason: "deleting untracked git files" },
-	{ pattern: /\bgit\s+(checkout|restore)\s+(--\s+)?\.(\s|$)/i, reason: "discarding working-tree changes" },
-	{ pattern: /\bgit\s+push\b[^\n;&|]*(--force|-f\b)/i, reason: "rewriting remote git history" },
-	{ pattern: /\b(DROP\s+(TABLE|DATABASE)|TRUNCATE(\s+TABLE)?)\b/i, reason: "destructive SQL" },
-	{ pattern: /\bkubectl\s+delete\b/i, reason: "deleting Kubernetes resources" },
-	{ pattern: /\bdocker\s+(system\s+prune|volume\s+rm|rm\s+-f)\b/i, reason: "deleting Docker resources" },
-	{ pattern: /\b(pkill|killall)\b[^\n;&|]*(-9|--signal\s+9|SIGKILL)/i, reason: "force-killing processes" },
+	{
+		pattern: /\bgit\s+clean\s+-[^\n;&|]*[df][^\n;&|]*[df]?\b/i,
+		reason: "deleting untracked git files",
+	},
+	{
+		pattern: /\bgit\s+(checkout|restore)\s+(--\s+)?\.(\s|$)/i,
+		reason: "discarding working-tree changes",
+	},
+	{
+		pattern: /\bgit\s+push\b[^\n;&|]*(--force|-f\b)/i,
+		reason: "rewriting remote git history",
+	},
+	{
+		pattern: /\b(DROP\s+(TABLE|DATABASE)|TRUNCATE(\s+TABLE)?)\b/i,
+		reason: "destructive SQL",
+	},
+	{
+		pattern: /\bkubectl\s+delete\b/i,
+		reason: "deleting Kubernetes resources",
+	},
+	{
+		pattern: /\bdocker\s+(system\s+prune|volume\s+rm|rm\s+-f)\b/i,
+		reason: "deleting Docker resources",
+	},
+	{
+		pattern: /\b(pkill|killall)\b[^\n;&|]*(-9|--signal\s+9|SIGKILL)/i,
+		reason: "force-killing processes",
+	},
 ]
 
 function loadState(): GuardState {
@@ -72,7 +118,8 @@ function clearFreeze(): void {
 
 function expandHome(inputPath: string): string {
 	if (inputPath === "~") return os.homedir()
-	if (inputPath.startsWith("~/")) return path.join(os.homedir(), inputPath.slice(2))
+	if (inputPath.startsWith("~/"))
+		return path.join(os.homedir(), inputPath.slice(2))
 	return inputPath
 }
 
@@ -87,7 +134,10 @@ function normalizeDir(inputPath: string, cwd: string): string {
 
 function isWithinDir(baseDir: string, targetPath: string): boolean {
 	const relative = path.relative(baseDir, targetPath)
-	return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+	return (
+		relative === "" ||
+		(!relative.startsWith("..") && !path.isAbsolute(relative))
+	)
 }
 
 function truncate(value: string, max = 600): string {
@@ -133,7 +183,10 @@ function realExistingOrAncestor(targetPath: string): string | undefined {
 
 function isLexicallyInsideTempRoot(targetPath: string): boolean {
 	const resolved = path.resolve(targetPath)
-	return TEMP_ROOTS.some((root) => isWithinDir(root, resolved)) || ["/tmp", "/private/tmp"].some((root) => isWithinDir(root, resolved))
+	return (
+		TEMP_ROOTS.some((root) => isWithinDir(root, resolved)) ||
+		["/tmp", "/private/tmp"].some((root) => isWithinDir(root, resolved))
+	)
 }
 
 function isRealPathInsideTempRoot(targetPath: string): boolean {
@@ -144,16 +197,22 @@ function isRealPathInsideTempRoot(targetPath: string): boolean {
 
 function isTempScratchPath(targetPath: string, cwd: string): boolean {
 	const resolved = resolvePath(targetPath, cwd)
-	return isLexicallyInsideTempRoot(resolved) && isRealPathInsideTempRoot(resolved)
+	return (
+		isLexicallyInsideTempRoot(resolved) && isRealPathInsideTempRoot(resolved)
+	)
 }
 
-function inspectTempSymlinkEscape(targetPath: string, cwd: string): Finding | undefined {
+function inspectTempSymlinkEscape(
+	targetPath: string,
+	cwd: string,
+): Finding | undefined {
 	const resolved = resolvePath(targetPath, cwd)
 	if (!isLexicallyInsideTempRoot(resolved)) return undefined
 	if (isRealPathInsideTempRoot(resolved)) return undefined
 	return {
 		kind: "temp-symlink-escape",
-		reason: "temp path resolves through a symlink/ancestor outside the temp roots",
+		reason:
+			"temp path resolves through a symlink/ancestor outside the temp roots",
 	}
 }
 
@@ -187,12 +246,20 @@ function extractRecursiveRmTargets(command: string): string[][] {
 }
 
 function isBroadTargetToken(token: string): boolean {
-	return /[*?\[\]{}]/.test(token) || token === "/" || token === "~" || token === "$HOME"
+	return (
+		/[*?\[\]{}]/.test(token) ||
+		token === "/" ||
+		token === "~" ||
+		token === "$HOME"
+	)
 }
 
 function isTempRootItself(targetPath: string): boolean {
 	const resolved = path.resolve(targetPath)
-	if (TEMP_ROOTS.some((root) => resolved === root) || ["/tmp", "/private/tmp"].some((root) => resolved === root)) {
+	if (
+		TEMP_ROOTS.some((root) => resolved === root) ||
+		["/tmp", "/private/tmp"].some((root) => resolved === root)
+	) {
 		return true
 	}
 	if (!fs.existsSync(resolved)) return false
@@ -228,32 +295,56 @@ function isSafeRecursiveDelete(command: string, cwd: string): boolean {
 function inspectCommand(command: string, cwd: string): Finding | undefined {
 	for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
 		if (!pattern.test(command)) continue
-		if (reason === "recursive delete" && isSafeRecursiveDelete(command, cwd)) continue
+		if (reason === "recursive delete" && isSafeRecursiveDelete(command, cwd))
+			continue
 		return { kind: "destructive-command", reason }
 	}
 	return undefined
 }
 
-function inspectProtectedPath(targetPath: string, cwd: string): Finding | undefined {
+function inspectProtectedPath(
+	targetPath: string,
+	cwd: string,
+): Finding | undefined {
 	const resolved = resolvePath(targetPath, cwd)
 	const parts = resolved.split(path.sep)
 	const basename = path.basename(resolved)
 
-	if (parts.includes(".git")) return { kind: "protected-path", reason: "writes inside .git are blocked" }
-	if (parts.includes("node_modules")) return { kind: "protected-path", reason: "writes inside node_modules are blocked" }
+	if (parts.includes(".git"))
+		return {
+			kind: "protected-path",
+			reason: "writes inside .git are blocked",
+		}
+	if (parts.includes("node_modules"))
+		return {
+			kind: "protected-path",
+			reason: "writes inside node_modules are blocked",
+		}
 	if (/^\.env($|\.)/.test(basename) && basename !== ".env.example") {
-		return { kind: "protected-path", reason: "environment secret files are blocked" }
+		return {
+			kind: "protected-path",
+			reason: "environment secret files are blocked",
+		}
 	}
 	if (/\.(pem|key|p12|pfx)$/i.test(basename)) {
-		return { kind: "protected-path", reason: "private key / certificate files are blocked" }
+		return {
+			kind: "protected-path",
+			reason: "private key / certificate files are blocked",
+		}
 	}
-	if (basename === "auth.json" && resolved.includes(`${path.sep}.pi${path.sep}agent${path.sep}`)) {
+	if (
+		basename === "auth.json" &&
+		resolved.includes(`${path.sep}.pi${path.sep}agent${path.sep}`)
+	) {
 		return { kind: "protected-path", reason: "Pi auth state is blocked" }
 	}
 	return undefined
 }
 
-function inspectFreezeBoundary(targetPath: string, cwd: string): Finding | undefined {
+function inspectFreezeBoundary(
+	targetPath: string,
+	cwd: string,
+): Finding | undefined {
 	const freezeDir = loadState().freezeDir
 	if (!freezeDir) return undefined
 	if (isTempScratchPath(targetPath, cwd)) return undefined
@@ -265,17 +356,31 @@ function inspectFreezeBoundary(targetPath: string, cwd: string): Finding | undef
 	}
 }
 
-async function confirmOrBlock(ctx: ExtensionContext, title: string, body: string, noUiReason: string) {
+async function confirmOrBlock(
+	ctx: ExtensionContext,
+	title: string,
+	body: string,
+	noUiReason: string,
+) {
 	if (!ctx.hasUI) return { block: true, reason: noUiReason }
-	const choice = await ctx.ui.select(`${title}\n\n${body}\n\nAllow this once?`, ["Allow once", "Block"])
-	if (choice !== "Allow once") return { block: true, reason: "Blocked by guard" }
+	const choice = await ctx.ui.select(
+		`${title}\n\n${body}\n\nAllow this once?`,
+		["Allow once", "Block"],
+	)
+	if (choice !== "Allow once")
+		return { block: true, reason: "Blocked by guard" }
 	return undefined
 }
 
 function renderStatus(ctx: ExtensionCommandContext | ExtensionContext): void {
 	const freezeDir = loadState().freezeDir
 	if (ctx.hasUI) {
-		ctx.ui.setStatus("guard", freezeDir ? `guard: ${path.basename(freezeDir) || freezeDir}` : "guard")
+		ctx.ui.setStatus(
+			"guard",
+			freezeDir
+				? `guard: ${path.basename(freezeDir) || freezeDir}`
+				: "guard",
+		)
 	}
 }
 
@@ -306,19 +411,31 @@ export default function guardExtension(pi: ExtensionAPI) {
 
 			const protectedFinding = inspectProtectedPath(targetPath, cwd)
 			if (protectedFinding) {
-				if (ctx.hasUI) ctx.ui.notify(`Guard blocked ${event.toolName}: ${targetPath}`, "warning")
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`Guard blocked ${event.toolName}: ${targetPath}`,
+						"warning",
+					)
 				return { block: true, reason: protectedFinding.reason }
 			}
 
 			const tempSymlinkFinding = inspectTempSymlinkEscape(targetPath, cwd)
 			if (tempSymlinkFinding) {
-				if (ctx.hasUI) ctx.ui.notify(`Guard blocked temp symlink escape: ${targetPath}`, "warning")
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`Guard blocked temp symlink escape: ${targetPath}`,
+						"warning",
+					)
 				return { block: true, reason: tempSymlinkFinding.reason }
 			}
 
 			const freezeFinding = inspectFreezeBoundary(targetPath, cwd)
 			if (freezeFinding) {
-				if (ctx.hasUI) ctx.ui.notify(`Guard blocked edit outside frozen directory: ${targetPath}`, "warning")
+				if (ctx.hasUI)
+					ctx.ui.notify(
+						`Guard blocked edit outside frozen directory: ${targetPath}`,
+						"warning",
+					)
 				return { block: true, reason: freezeFinding.reason }
 			}
 		}
@@ -327,7 +444,8 @@ export default function guardExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("guard", {
-		description: "Freeze edits to a directory. Usage: /guard [path] (defaults to current directory). Destructive bash is always confirmed.",
+		description:
+			"Freeze edits to a directory. Usage: /guard [path] (defaults to current directory). Destructive bash is always confirmed.",
 		handler: async (args, ctx) => {
 			const cwd = getCwd(ctx)
 			const rawPath = args.trim() || "."
@@ -341,7 +459,8 @@ export default function guardExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("unfreeze", {
-		description: "Clear the /guard edit freeze. Destructive bash confirmations remain active.",
+		description:
+			"Clear the /guard edit freeze. Destructive bash confirmations remain active.",
 		handler: async (_args, ctx) => {
 			clearFreeze()
 			renderStatus(ctx)
@@ -353,7 +472,12 @@ export default function guardExtension(pi: ExtensionAPI) {
 		description: "Show guard status.",
 		handler: async (_args, ctx) => {
 			const freezeDir = loadState().freezeDir
-			ctx.ui.notify(freezeDir ? `Guard freeze: ${freezeDir}` : "Guard freeze: off. Destructive bash confirmation: on.", "info")
+			ctx.ui.notify(
+				freezeDir
+					? `Guard freeze: ${freezeDir}`
+					: "Guard freeze: off. Destructive bash confirmation: on.",
+				"info",
+			)
 			renderStatus(ctx)
 		},
 	})

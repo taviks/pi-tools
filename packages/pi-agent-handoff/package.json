@@ -1,16 +1,20 @@
 {
-  "name": "pi-agent-handoff",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Pi extension for cross-harness agent handoff artifacts and Claude Code review handoffs.",
-  "license": "MIT",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./src/index.ts"]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
-  }
+	"name": "pi-agent-handoff",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Pi extension for cross-harness agent handoff artifacts and Claude Code review handoffs.",
+	"license": "MIT",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	}
 }

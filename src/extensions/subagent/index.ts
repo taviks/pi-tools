@@ -1,16 +1,16 @@
 /**
-	* Subagent Tool - Delegate tasks to specialized agents
-	*
-	* Spawns a separate `pi` process for each subagent invocation,
-	* giving it an isolated context window.
-	*
-	* Supports three modes:
-	*   - Single: { agent: "name", task: "..." }
-	*   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
-	*   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
-	*
-	* Uses JSON mode to capture structured output from subagents.
-	*/
+ * Subagent Tool - Delegate tasks to specialized agents
+ *
+ * Spawns a separate `pi` process for each subagent invocation,
+ * giving it an isolated context window.
+ *
+ * Supports three modes:
+ *   - Single: { agent: "name", task: "..." }
+ *   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
+ *   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
+ *
+ * Uses JSON mode to capture structured output from subagents.
+ */
 
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
@@ -19,13 +19,26 @@ import * as path from "node:path"
 import type { AgentToolResult } from "@earendil-works/pi-agent-core"
 import type { Message } from "@earendil-works/pi-ai"
 import { StringEnum } from "@earendil-works/pi-ai"
-import { keyHint, type ExtensionAPI, type ExtensionContext, getMarkdownTheme } from "@earendil-works/pi-coding-agent"
+import {
+	keyHint,
+	type ExtensionAPI,
+	type ExtensionContext,
+	getMarkdownTheme,
+} from "@earendil-works/pi-coding-agent"
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js"
-import { FAST_MODE_ENV_KEY, FAST_SERVICE_TIER_ENV_KEY, getFastModeState } from "../../lib/fast-mode-state.js"
+import {
+	FAST_MODE_ENV_KEY,
+	FAST_SERVICE_TIER_ENV_KEY,
+	getFastModeState,
+} from "../../lib/fast-mode-state.js"
 import { installSlashCommandArgumentAutocomplete } from "../../lib/slash-command-autocomplete.js"
-import { TASK_PREVIEW_SHORTCUT_LABEL, ensureTaskPreviewShortcut, getTaskPreview } from "../../lib/task-preview-state.js"
+import {
+	TASK_PREVIEW_SHORTCUT_LABEL,
+	ensureTaskPreviewShortcut,
+	getTaskPreview,
+} from "../../lib/task-preview-state.js"
 
 const MAX_PARALLEL_TASKS = 16
 const MAX_CONCURRENCY = 10
@@ -40,7 +53,18 @@ const WIDGET_SPINNER_INTERVAL_MS = 400
 const SUBAGENT_WIDGET_KEY = "subagent-jobs"
 const SUBAGENT_STATUS_KEY = "subagent-jobs"
 const PROJECT_AGENT_TRUST_ENV_KEY = "PI_SUBAGENT_TRUST_PROJECT_AGENTS"
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
+const SPINNER_FRAMES = [
+	"⠋",
+	"⠙",
+	"⠹",
+	"⠸",
+	"⠼",
+	"⠴",
+	"⠦",
+	"⠧",
+	"⠇",
+	"⠏",
+] as const
 const MODEL_RETRY_COOLDOWN_MS = 90_000
 const EXECUTION_SLOT_POLL_MS = 150
 
@@ -76,7 +100,14 @@ const RETRYABLE_FAILURE_PATTERNS = [
 ]
 
 const UNSTABLE_MODEL_PATTERNS = [/gemini/i, /minimax/i, /grok/i]
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
+const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+] as const
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 
 const CANONICAL_MODEL_IDS: Record<string, string> = {
@@ -223,7 +254,12 @@ const modelRetryCooldownUntil = new Map<string, number>()
 function getAvailableModelIds(ctx?: ExtensionContext): Set<string> {
 	const registry = ctx?.modelRegistry ?? latestUiContext?.modelRegistry
 	const models = registry?.getAvailable?.() ?? []
-	return new Set(models.map((model: { provider: string; id: string }) => `${model.provider}/${model.id}`))
+	return new Set(
+		models.map(
+			(model: { provider: string; id: string }) =>
+				`${model.provider}/${model.id}`,
+		),
+	)
 }
 
 interface RunModelPlan {
@@ -241,10 +277,14 @@ function normalizeModelId(model: string | undefined): string | undefined {
 	return trimmed.length > 0 ? trimmed : undefined
 }
 
-function normalizeThinkingLevel(thinkingLevel: string | undefined): ThinkingLevel | undefined {
+function normalizeThinkingLevel(
+	thinkingLevel: string | undefined,
+): ThinkingLevel | undefined {
 	if (!thinkingLevel) return undefined
 	const normalized = thinkingLevel.trim().toLowerCase()
-	return (THINKING_LEVELS as readonly string[]).includes(normalized) ? (normalized as ThinkingLevel) : undefined
+	return (THINKING_LEVELS as readonly string[]).includes(normalized)
+		? (normalized as ThinkingLevel)
+		: undefined
 }
 
 function canonicalizeModelBase(model: string | undefined): string | undefined {
@@ -254,15 +294,23 @@ function canonicalizeModelBase(model: string | undefined): string | undefined {
 	return CANONICAL_MODEL_IDS[normalized.toLowerCase()] ?? normalized
 }
 
-function splitModelThinking(model: string | undefined): { model?: string; thinkingLevel?: ThinkingLevel } {
+function splitModelThinking(model: string | undefined): {
+	model?: string
+	thinkingLevel?: ThinkingLevel
+} {
 	const normalized = normalizeModelId(model)
 	if (!normalized) return {}
 	const slashIndex = normalized.indexOf("/")
 	const colonIndex = normalized.lastIndexOf(":")
 	if (colonIndex > slashIndex) {
-		const thinkingLevel = normalizeThinkingLevel(normalized.slice(colonIndex + 1))
+		const thinkingLevel = normalizeThinkingLevel(
+			normalized.slice(colonIndex + 1),
+		)
 		if (thinkingLevel) {
-			return { model: canonicalizeModelBase(normalized.slice(0, colonIndex)), thinkingLevel }
+			return {
+				model: canonicalizeModelBase(normalized.slice(0, colonIndex)),
+				thinkingLevel,
+			}
 		}
 	}
 	return { model: canonicalizeModelBase(normalized) }
@@ -279,7 +327,9 @@ function normalizeModelList(models: string[] | undefined): string[] {
 	return Array.from(unique)
 }
 
-function normalizeCategoryName(category: string | undefined): string | undefined {
+function normalizeCategoryName(
+	category: string | undefined,
+): string | undefined {
 	if (!category) return undefined
 	const normalized = category.trim().toLowerCase()
 	return normalized.length > 0 ? normalized : undefined
@@ -315,7 +365,10 @@ function decrementCount(map: Map<string, number>, key: string | undefined) {
 	else map.set(key, next)
 }
 
-async function acquireExecutionSlot(model: string | undefined, signal: AbortSignal | undefined): Promise<() => void> {
+async function acquireExecutionSlot(
+	model: string | undefined,
+	signal: AbortSignal | undefined,
+): Promise<() => void> {
 	const normalizedModel = normalizeModelId(model)
 	if (!normalizedModel) return () => {}
 	const provider = parseProviderFromModel(normalizedModel)
@@ -324,7 +377,9 @@ async function acquireExecutionSlot(model: string | undefined, signal: AbortSign
 
 	while (true) {
 		if (signal?.aborted) throw new Error("Aborted")
-		const providerCount = provider ? (activeProviderSlots.get(provider) ?? 0) : 0
+		const providerCount = provider
+			? (activeProviderSlots.get(provider) ?? 0)
+			: 0
 		const modelCount = activeModelSlots.get(normalizedModel) ?? 0
 		const providerAvailable = providerCount < providerLimit
 		const modelAvailable = modelCount < modelLimit
@@ -343,7 +398,9 @@ async function acquireExecutionSlot(model: string | undefined, signal: AbortSign
 	}
 }
 
-function getCategoryRouting(category: string | undefined): CategoryRoutingConfig | undefined {
+function getCategoryRouting(
+	category: string | undefined,
+): CategoryRoutingConfig | undefined {
 	const key = normalizeCategoryName(category)
 	if (!key) return undefined
 	return CATEGORY_ROUTING[key]
@@ -418,7 +475,7 @@ function resolveRunModelPlan(
 	const parsedAgentDefault = splitModelThinking(agent.model)
 	const agentDefaultModel = parsedAgentDefault.model
 	const categoryPrimaryModel = isVisualCategory(category)
-		? normalizeModelId(categoryConfig?.model) ?? "openai-codex/gpt-5.5"
+		? (normalizeModelId(categoryConfig?.model) ?? "openai-codex/gpt-5.5")
 		: undefined
 	// Explicit tool overrides win first, and visual categories still force the visual route.
 	// Otherwise prefer the agent's own frontmatter model before generic routing so
@@ -442,9 +499,16 @@ function resolveRunModelPlan(
 		primaryModel = mergedFallbacks.shift()
 	}
 
-	const requestedCandidates = normalizeModelList([...(primaryModel ? [primaryModel] : []), ...mergedFallbacks])
-	const missingCandidates = requestedCandidates.filter((model) => !availableModelIds.has(splitModelThinking(model).model ?? ""))
-	const modelCandidates = requestedCandidates.filter((model) => availableModelIds.has(splitModelThinking(model).model ?? ""))
+	const requestedCandidates = normalizeModelList([
+		...(primaryModel ? [primaryModel] : []),
+		...mergedFallbacks,
+	])
+	const missingCandidates = requestedCandidates.filter(
+		(model) => !availableModelIds.has(splitModelThinking(model).model ?? ""),
+	)
+	const modelCandidates = requestedCandidates.filter((model) =>
+		availableModelIds.has(splitModelThinking(model).model ?? ""),
+	)
 	if (!primaryModel || !availableModelIds.has(primaryModel)) {
 		primaryModel = modelCandidates[0]
 	}
@@ -454,8 +518,16 @@ function resolveRunModelPlan(
 		categoryConfig?.thinkingLevel ??
 		parsedAgentDefault.thinkingLevel ??
 		hierarchy.thinkingLevel
-	const unstable = isUnstableCategory(category) || isUnstableModel(primaryModel)
-	return { primaryModel, modelCandidates, thinkingLevel, category: normalizeCategoryName(category), unstable, missingCandidates }
+	const unstable =
+		isUnstableCategory(category) || isUnstableModel(primaryModel)
+	return {
+		primaryModel,
+		modelCandidates,
+		thinkingLevel,
+		category: normalizeCategoryName(category),
+		unstable,
+		missingCandidates,
+	}
 }
 
 function formatTokens(count: number): string {
@@ -479,7 +551,8 @@ function formatUsageStats(
 	thinkingLevel?: ThinkingLevel,
 ): string {
 	const parts: string[] = []
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`)
+	if (usage.turns)
+		parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`)
 	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`)
 	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`)
 	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`)
@@ -506,7 +579,8 @@ function formatToolCall(
 	switch (toolName) {
 		case "bash": {
 			const command = (args.command as string) || "..."
-			const preview = command.length > 60 ? `${command.slice(0, 60)}...` : command
+			const preview =
+				command.length > 60 ? `${command.slice(0, 60)}...` : command
 			return themeFg("muted", "$ ") + themeFg("toolOutput", preview)
 		}
 		case "read": {
@@ -518,7 +592,10 @@ function formatToolCall(
 			if (offset !== undefined || limit !== undefined) {
 				const startLine = offset ?? 1
 				const endLine = limit !== undefined ? startLine + limit - 1 : ""
-				text += themeFg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`)
+				text += themeFg(
+					"warning",
+					`:${startLine}${endLine ? `-${endLine}` : ""}`,
+				)
 			}
 			return themeFg("muted", "read ") + text
 		}
@@ -533,16 +610,24 @@ function formatToolCall(
 		}
 		case "edit": {
 			const rawPath = (args.file_path || args.path || "...") as string
-			return themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath))
+			return (
+				themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath))
+			)
 		}
 		case "ls": {
 			const rawPath = (args.path || ".") as string
-			return themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath))
+			return (
+				themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath))
+			)
 		}
 		case "find": {
 			const pattern = (args.pattern || "*") as string
 			const rawPath = (args.path || ".") as string
-			return themeFg("muted", "find ") + themeFg("accent", pattern) + themeFg("dim", ` in ${shortenPath(rawPath)}`)
+			return (
+				themeFg("muted", "find ") +
+				themeFg("accent", pattern) +
+				themeFg("dim", ` in ${shortenPath(rawPath)}`)
+			)
 		}
 		case "grep": {
 			const pattern = (args.pattern || "") as string
@@ -555,7 +640,8 @@ function formatToolCall(
 		}
 		default: {
 			const argsStr = JSON.stringify(args)
-			const preview = argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr
+			const preview =
+				argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr
 			return themeFg("accent", toolName) + themeFg("dim", ` ${preview}`)
 		}
 	}
@@ -571,11 +657,23 @@ export interface UsageStats {
 	turns: number
 }
 
-export type SubagentRunState = "pending" | "running" | "completed" | "failed" | "cancelled"
+export type SubagentRunState =
+	| "pending"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled"
 type WidgetDensity = "detailed" | "compact"
 type WidgetGrouping = "job" | "agent"
 type WidgetAgentLimit = number | "all"
-type AgentType = "coordinator" | "scout" | "planner" | "worker" | "reviewer" | "verifier" | "other"
+type AgentType =
+	| "coordinator"
+	| "scout"
+	| "planner"
+	| "worker"
+	| "reviewer"
+	| "verifier"
+	| "other"
 
 export interface SingleResult {
 	agent: string
@@ -606,7 +704,12 @@ export interface SubagentDetails {
 	results: SingleResult[]
 }
 
-type BackgroundJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
+type BackgroundJobStatus =
+	| "queued"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled"
 
 let latestUiContext: ExtensionContext | undefined
 
@@ -670,15 +773,23 @@ export function getFinalOutput(messages: Message[]): string {
 	return ""
 }
 
-type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> }
+type DisplayItem =
+	| { type: "text"; text: string }
+	| { type: "toolCall"; name: string; args: Record<string, any> }
 
 function getDisplayItems(messages: Message[]): DisplayItem[] {
 	const items: DisplayItem[] = []
 	for (const msg of messages) {
 		if (msg.role === "assistant") {
 			for (const part of msg.content) {
-				if (part.type === "text") items.push({ type: "text", text: part.text })
-				else if (part.type === "toolCall") items.push({ type: "toolCall", name: part.name, args: part.arguments })
+				if (part.type === "text")
+					items.push({ type: "text", text: part.text })
+				else if (part.type === "toolCall")
+					items.push({
+						type: "toolCall",
+						name: part.name,
+						args: part.arguments,
+					})
 			}
 		}
 	}
@@ -701,12 +812,16 @@ function shouldRetryWithFallback(result: SingleResult): boolean {
 	const state = getResultRunState(result)
 	if (state !== "failed") return false
 	if (result.stopReason === "aborted") return false
-	const text = `${result.stderr}\n${result.errorMessage ?? ""}\n${result.stopReason ?? ""}\n${getFinalOutput(result.messages)}`.toLowerCase()
+	const text =
+		`${result.stderr}\n${result.errorMessage ?? ""}\n${result.stopReason ?? ""}\n${getFinalOutput(result.messages)}`.toLowerCase()
 	if (isRetryableFailureText(text)) return true
 	return result.exitCode !== 0 && text.trim().length === 0
 }
 
-function hasNonCoolingCandidate(candidates: string[], startIndex: number): boolean {
+function hasNonCoolingCandidate(
+	candidates: string[],
+	startIndex: number,
+): boolean {
 	for (let i = startIndex; i < candidates.length; i++) {
 		if (!isModelCoolingDown(candidates[i])) return true
 	}
@@ -768,8 +883,12 @@ function statusIcon(status: BackgroundJobStatus): string {
 	}
 }
 
-function statusIconAnimated(status: BackgroundJobStatus, spinnerTick: number): string {
-	if (status === "running") return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
+function statusIconAnimated(
+	status: BackgroundJobStatus,
+	spinnerTick: number,
+): string {
+	if (status === "running")
+		return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
 	return statusIcon(status)
 }
 
@@ -790,7 +909,9 @@ function resultStateIcon(state: SubagentRunState, spinnerTick: number): string {
 	}
 }
 
-function runStateColor(state: SubagentRunState): "success" | "error" | "warning" | "muted" {
+function runStateColor(
+	state: SubagentRunState,
+): "success" | "error" | "warning" | "muted" {
 	switch (state) {
 		case "completed":
 			return "success"
@@ -820,7 +941,8 @@ function runStateLabel(state: SubagentRunState): string {
 function formatRouteMeta(result: SingleResult): string {
 	const parts: string[] = []
 	if (result.category) parts.push(`cat:${result.category}`)
-	if (result.attempts && result.attempts > 1) parts.push(`attempts:${result.attempts}`)
+	if (result.attempts && result.attempts > 1)
+		parts.push(`attempts:${result.attempts}`)
 	return parts.join(" · ")
 }
 
@@ -863,13 +985,16 @@ function formatDuration(ms: number): string {
 	if (seconds < 60) return `${seconds}s`
 	const minutes = Math.floor(seconds / 60)
 	const remainingSeconds = seconds % 60
-	if (minutes < 60) return `${minutes}m${remainingSeconds.toString().padStart(2, "0")}s`
+	if (minutes < 60)
+		return `${minutes}m${remainingSeconds.toString().padStart(2, "0")}s`
 	const hours = Math.floor(minutes / 60)
 	const remainingMinutes = minutes % 60
 	return `${hours}h${remainingMinutes.toString().padStart(2, "0")}m`
 }
 
-function getTaskPreviewHint(preview: ReturnType<typeof getTaskPreview>): string | undefined {
+function getTaskPreviewHint(
+	preview: ReturnType<typeof getTaskPreview>,
+): string | undefined {
 	if (!preview.canToggle) return undefined
 	return preview.truncated
 		? `(${TASK_PREVIEW_SHORTCUT_LABEL} for full task text)`
@@ -884,7 +1009,11 @@ function formatTaskPreviewBlock(task: string, theme: any): string {
 	return text
 }
 
-function formatTaskPreviewInline(task: string, theme: any, label = "Task"): string {
+function formatTaskPreviewInline(
+	task: string,
+	theme: any,
+	label = "Task",
+): string {
 	const preview = getTaskPreview(task)
 	const [firstLine = "(empty)", ...rest] = preview.lines
 	const indent = " ".repeat(label.length + 2)
@@ -943,7 +1072,9 @@ function getAgentTypeLabel(agentName: string): string {
 	}
 }
 
-function getAgentTypeColor(agentName: string): "accent" | "success" | "warning" | "error" | "toolTitle" {
+function getAgentTypeColor(
+	agentName: string,
+): "accent" | "success" | "warning" | "error" | "toolTitle" {
 	switch (getAgentType(agentName)) {
 		case "coordinator":
 			return "warning"
@@ -1045,7 +1176,15 @@ function makePlaceholderResult(
 		exitCode: -1,
 		messages: [],
 		stderr: "",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0,
+			contextTokens: 0,
+			turns: 0,
+		},
 		step,
 		category,
 		runState: "pending",
@@ -1067,7 +1206,10 @@ function summarizeJobLine(job: BackgroundJob): string {
 
 function buildWidgetHeader(
 	jobs: BackgroundJob[],
-	theme: { fg: (color: any, text: string) => string; bold: (text: string) => string },
+	theme: {
+		fg: (color: any, text: string) => string
+		bold: (text: string) => string
+	},
 	spinnerTick: number,
 	grouping: WidgetGrouping,
 	density: WidgetDensity,
@@ -1077,7 +1219,10 @@ function buildWidgetHeader(
 	const failed = jobs.filter((j) => j.status === "failed").length
 	const headerIcon =
 		running > 0
-			? theme.fg("warning", SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length])
+			? theme.fg(
+					"warning",
+					SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length],
+				)
 			: failed > 0
 				? theme.fg("warning", "◐")
 				: theme.fg("success", "✓")
@@ -1088,7 +1233,10 @@ function buildWidgetHeader(
 		" " +
 		theme.fg("toolTitle", theme.bold("Subagents")) +
 		" " +
-		theme.fg("dim", `${running} running · ${queued} queued${failed > 0 ? ` · ${failed} failed` : ""}`) +
+		theme.fg(
+			"dim",
+			`${running} running · ${queued} queued${failed > 0 ? ` · ${failed} failed` : ""}`,
+		) +
 		theme.fg("muted", ` · ${groupingLabel} · ${densityLabel}`)
 	)
 }
@@ -1101,7 +1249,9 @@ function summarizeAgentTypesInJob(job: BackgroundJob): string {
 	}
 	const entries = Array.from(byType.entries()).sort((a, b) => b[1] - a[1])
 	if (entries.length === 0) return ""
-	return entries.map(([type, count]) => `${getAgentTypeLabel(type)}×${count}`).join(" · ")
+	return entries
+		.map(([type, count]) => `${getAgentTypeLabel(type)}×${count}`)
+		.join(" · ")
 }
 
 function takeWithAgentLimit<T>(items: T[], limit: WidgetAgentLimit): T[] {
@@ -1125,7 +1275,10 @@ function parseWidgetAgentLimit(value: unknown): WidgetAgentLimit | undefined {
 
 function renderBackgroundWidgetByJobText(
 	jobs: BackgroundJob[],
-	theme: { fg: (color: any, text: string) => string; bold: (text: string) => string },
+	theme: {
+		fg: (color: any, text: string) => string
+		bold: (text: string) => string
+	},
 	spinnerTick: number,
 	density: WidgetDensity,
 	agentLimit: WidgetAgentLimit,
@@ -1139,7 +1292,9 @@ function renderBackgroundWidgetByJobText(
 		const counts = resultCounts(job.details.results)
 		const isLastJob = jobIndex === shownJobs.length - 1
 		const jobBranch = isLastJob ? "└─" : "├─"
-		const elapsed = formatDuration((job.finishedAt ?? Date.now()) - (job.startedAt ?? job.createdAt))
+		const elapsed = formatDuration(
+			(job.finishedAt ?? Date.now()) - (job.startedAt ?? job.createdAt),
+		)
 		const progress = `${counts.done}/${counts.total}`
 		const progressBar = renderMiniProgressBar(counts.done, counts.total)
 		const label = job.label?.trim() ? ` “${job.label.trim()}”` : ""
@@ -1160,7 +1315,10 @@ function renderBackgroundWidgetByJobText(
 		lines.push(
 			theme.fg("muted", jobBranch) +
 				" " +
-				theme.fg(jobStateColor, statusIconAnimated(job.status, spinnerTick + jobIndex)) +
+				theme.fg(
+					jobStateColor,
+					statusIconAnimated(job.status, spinnerTick + jobIndex),
+				) +
 				" " +
 				theme.fg("toolTitle", shortJobId(job.id)) +
 				theme.fg("dim", label) +
@@ -1174,7 +1332,9 @@ function renderBackgroundWidgetByJobText(
 			const typeSummary = summarizeAgentTypesInJob(job)
 			if (typeSummary) {
 				const branchPrefix = isLastJob ? "   " : "│  "
-				lines.push(theme.fg("muted", `${branchPrefix}└─ active: ${typeSummary}`))
+				lines.push(
+					theme.fg("muted", `${branchPrefix}└─ active: ${typeSummary}`),
+				)
 			}
 			continue
 		}
@@ -1201,8 +1361,12 @@ function renderBackgroundWidgetByJobText(
 								? "warning"
 								: "muted"
 
-			const elapsedMs = result.startedAt ? (result.finishedAt ?? Date.now()) - result.startedAt : 0
-			const elapsedText = result.startedAt ? formatDuration(elapsedMs) : undefined
+			const elapsedMs = result.startedAt
+				? (result.finishedAt ?? Date.now()) - result.startedAt
+				: 0
+			const elapsedText = result.startedAt
+				? formatDuration(elapsedMs)
+				: undefined
 			const stateText = runStateLabel(runState)
 			const taskText = previewTask(result.task, 52)
 			const detailText = taskText || runStateDetailHint(runState)
@@ -1220,29 +1384,49 @@ function renderBackgroundWidgetByJobText(
 					theme.fg(stateColor, `[${stateText}]`) +
 					(elapsedText ? theme.fg("dim", ` · ${elapsedText}`) : ""),
 			)
-			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText))
+			lines.push(
+				theme.fg("muted", `${detailPrefix}└─`) +
+					" " +
+					theme.fg("dim", detailText),
+			)
 			if (result.retryLog && result.retryLog.length > 0) {
-				const retryText = previewTask(result.retryLog[result.retryLog.length - 1], 58)
-				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText))
+				const retryText = previewTask(
+					result.retryLog[result.retryLog.length - 1],
+					58,
+				)
+				lines.push(
+					theme.fg("muted", `${detailPrefix}   ↳ `) +
+						theme.fg("warning", retryText),
+				)
 			}
 		}
 
 		const extraAgents = job.details.results.length - shownAgents.length
 		if (extraAgents > 0) {
 			const branchPrefix = isLastJob ? "   " : "│  "
-			lines.push(theme.fg("muted", `${branchPrefix}└─ … +${extraAgents} more agents`))
+			lines.push(
+				theme.fg(
+					"muted",
+					`${branchPrefix}└─ … +${extraAgents} more agents`,
+				),
+			)
 		}
 	}
 
 	if (sorted.length > MAX_WIDGET_JOBS) {
-		lines.push(theme.fg("muted", `… +${sorted.length - MAX_WIDGET_JOBS} more jobs`))
+		lines.push(
+			theme.fg("muted", `… +${sorted.length - MAX_WIDGET_JOBS} more jobs`),
+		)
 	}
 	return lines.join("\n")
 }
 
 function renderBackgroundWidgetByAgentTypeText(
 	jobs: BackgroundJob[],
-	theme: { fg: (color: any, text: string) => string; bold: (text: string) => string },
+	theme: {
+		fg: (color: any, text: string) => string
+		bold: (text: string) => string
+	},
 	spinnerTick: number,
 	density: WidgetDensity,
 	agentLimit: WidgetAgentLimit,
@@ -1253,7 +1437,11 @@ function renderBackgroundWidgetByAgentTypeText(
 			type: AgentType
 			color: "accent" | "success" | "warning" | "error" | "toolTitle"
 			label: string
-			items: Array<{ job: BackgroundJob; result: SingleResult; instanceName: string }>
+			items: Array<{
+				job: BackgroundJob
+				result: SingleResult
+				instanceName: string
+			}>
 			counts: ReturnType<typeof resultCounts>
 		}
 	>()
@@ -1270,7 +1458,15 @@ function renderBackgroundWidgetByAgentTypeText(
 					color: getAgentTypeColor(result.agent),
 					label: getAgentTypeLabel(type),
 					items: [],
-					counts: { total: 0, pending: 0, running: 0, done: 0, completed: 0, failed: 0, cancelled: 0 },
+					counts: {
+						total: 0,
+						pending: 0,
+						running: 0,
+						done: 0,
+						completed: 0,
+						failed: 0,
+						cancelled: 0,
+					},
 				})
 			}
 			const group = typeGroups.get(type)!
@@ -1283,9 +1479,12 @@ function renderBackgroundWidgetByAgentTypeText(
 	}
 
 	const sortedGroups = Array.from(typeGroups.values()).sort((a, b) => {
-		if (b.counts.running !== a.counts.running) return b.counts.running - a.counts.running
-		if (b.counts.pending !== a.counts.pending) return b.counts.pending - a.counts.pending
-		if (b.counts.total !== a.counts.total) return b.counts.total - a.counts.total
+		if (b.counts.running !== a.counts.running)
+			return b.counts.running - a.counts.running
+		if (b.counts.pending !== a.counts.pending)
+			return b.counts.pending - a.counts.pending
+		if (b.counts.total !== a.counts.total)
+			return b.counts.total - a.counts.total
 		return a.label.localeCompare(b.label)
 	})
 
@@ -1320,9 +1519,12 @@ function renderBackgroundWidgetByAgentTypeText(
 							: "success"
 
 		const metaParts = [`${group.counts.done}/${group.counts.total} done`]
-		if (group.counts.running > 0) metaParts.push(`${group.counts.running} running`)
-		if (group.counts.pending > 0) metaParts.push(`${group.counts.pending} queued`)
-		if (group.counts.failed > 0) metaParts.push(`${group.counts.failed} failed`)
+		if (group.counts.running > 0)
+			metaParts.push(`${group.counts.running} running`)
+		if (group.counts.pending > 0)
+			metaParts.push(`${group.counts.pending} queued`)
+		if (group.counts.failed > 0)
+			metaParts.push(`${group.counts.failed} failed`)
 		const groupTypeIcon = getAgentTypeIconByType(group.type)
 
 		lines.push(
@@ -1341,7 +1543,10 @@ function renderBackgroundWidgetByAgentTypeText(
 		for (let i = 0; i < shownItems.length; i++) {
 			const item = shownItems[i]
 			const runState = getResultRunState(item.result)
-			const itemStateIcon = resultStateIcon(runState, spinnerTick + groupIndex + i)
+			const itemStateIcon = resultStateIcon(
+				runState,
+				spinnerTick + groupIndex + i,
+			)
 			const stateColor =
 				runState === "completed"
 					? "success"
@@ -1354,14 +1559,22 @@ function renderBackgroundWidgetByAgentTypeText(
 								: "muted"
 			const stateText = runStateLabel(runState)
 			const elapsed = item.result.startedAt
-				? formatDuration((item.result.finishedAt ?? Date.now()) - item.result.startedAt)
+				? formatDuration(
+						(item.result.finishedAt ?? Date.now()) -
+							item.result.startedAt,
+					)
 				: undefined
 			const taskText = previewTask(item.result.task, 40)
 			const detailText = taskText || runStateDetailHint(runState)
-			const agentLabel = formatAgentTabLabel(item.result.agent, item.instanceName)
+			const agentLabel = formatAgentTabLabel(
+				item.result.agent,
+				item.instanceName,
+			)
 			const agentIcon = getAgentTypeIcon(item.result.agent)
 			const prefix = isLastGroup ? "   " : "│  "
-			const isLastItem = i === shownItems.length - 1 && group.items.length <= shownItems.length
+			const isLastItem =
+				i === shownItems.length - 1 &&
+				group.items.length <= shownItems.length
 			const itemBranch = isLastItem ? "└─" : "├─"
 			const detailPrefix = `${prefix}${itemBranch === "└─" ? "   " : "│  "}`
 
@@ -1373,44 +1586,84 @@ function renderBackgroundWidgetByAgentTypeText(
 					theme.fg(group.color, `${agentIcon} ${agentLabel}`) +
 					" " +
 					theme.fg(stateColor, `[${stateText}]`) +
-					theme.fg("dim", ` · ${shortJobId(item.job.id)}${elapsed ? ` · ${elapsed}` : ""}`),
+					theme.fg(
+						"dim",
+						` · ${shortJobId(item.job.id)}${elapsed ? ` · ${elapsed}` : ""}`,
+					),
 			)
-			lines.push(theme.fg("muted", `${detailPrefix}└─`) + " " + theme.fg("dim", detailText))
+			lines.push(
+				theme.fg("muted", `${detailPrefix}└─`) +
+					" " +
+					theme.fg("dim", detailText),
+			)
 			if (item.result.retryLog && item.result.retryLog.length > 0) {
-				const retryText = previewTask(item.result.retryLog[item.result.retryLog.length - 1], 56)
-				lines.push(theme.fg("muted", `${detailPrefix}   ↳ `) + theme.fg("warning", retryText))
+				const retryText = previewTask(
+					item.result.retryLog[item.result.retryLog.length - 1],
+					56,
+				)
+				lines.push(
+					theme.fg("muted", `${detailPrefix}   ↳ `) +
+						theme.fg("warning", retryText),
+				)
 			}
 		}
 
 		const extraItems = group.items.length - shownItems.length
 		if (extraItems > 0) {
 			const prefix = isLastGroup ? "   " : "│  "
-			lines.push(theme.fg("muted", `${prefix}└─ … +${extraItems} more ${group.label.toLowerCase()} agents`))
+			lines.push(
+				theme.fg(
+					"muted",
+					`${prefix}└─ … +${extraItems} more ${group.label.toLowerCase()} agents`,
+				),
+			)
 		}
 	}
 
 	if (sortedGroups.length > MAX_WIDGET_TYPE_LINES) {
-		lines.push(theme.fg("muted", `… +${sortedGroups.length - MAX_WIDGET_TYPE_LINES} more agent types`))
+		lines.push(
+			theme.fg(
+				"muted",
+				`… +${sortedGroups.length - MAX_WIDGET_TYPE_LINES} more agent types`,
+			),
+		)
 	}
 	return lines.join("\n")
 }
 
 function renderBackgroundWidgetText(
 	jobs: BackgroundJob[],
-	theme: { fg: (color: any, text: string) => string; bold: (text: string) => string },
+	theme: {
+		fg: (color: any, text: string) => string
+		bold: (text: string) => string
+	},
 	spinnerTick: number,
 	density: WidgetDensity,
 	grouping: WidgetGrouping,
 	agentLimit: WidgetAgentLimit,
 ): string {
 	if (jobs.length === 0) return ""
-	const lines = [buildWidgetHeader(jobs, theme, spinnerTick, grouping, density)]
+	const lines = [
+		buildWidgetHeader(jobs, theme, spinnerTick, grouping, density),
+	]
 	if (grouping === "agent") {
-		const body = renderBackgroundWidgetByAgentTypeText(jobs, theme, spinnerTick, density, agentLimit)
+		const body = renderBackgroundWidgetByAgentTypeText(
+			jobs,
+			theme,
+			spinnerTick,
+			density,
+			agentLimit,
+		)
 		if (body) lines.push(body)
 		return lines.join("\n")
 	}
-	const body = renderBackgroundWidgetByJobText(jobs, theme, spinnerTick, density, agentLimit)
+	const body = renderBackgroundWidgetByJobText(
+		jobs,
+		theme,
+		spinnerTick,
+		density,
+		agentLimit,
+	)
 	if (body) lines.push(body)
 	return lines.join("\n")
 }
@@ -1435,16 +1688,27 @@ function renderJobResult(job: BackgroundJob): string {
 		for (let i = 0; i < job.details.results.length; i++) {
 			const result = job.details.results[i]
 			const state = getResultRunState(result)
-			const elapsed = result.startedAt ? formatDuration((result.finishedAt ?? Date.now()) - result.startedAt) : undefined
+			const elapsed = result.startedAt
+				? formatDuration(
+						(result.finishedAt ?? Date.now()) - result.startedAt,
+					)
+				: undefined
 			const elapsedText = elapsed ? ` (${elapsed})` : ""
 			const label = formatAgentTabLabel(result.agent, namedAgents[i])
 			const metaParts: string[] = []
-			if (result.model) metaParts.push(`model:${result.model}${result.thinkingLevel ? `:${result.thinkingLevel}` : ""}`)
-			else if (result.thinkingLevel) metaParts.push(`thinking:${result.thinkingLevel}`)
+			if (result.model)
+				metaParts.push(
+					`model:${result.model}${result.thinkingLevel ? `:${result.thinkingLevel}` : ""}`,
+				)
+			else if (result.thinkingLevel)
+				metaParts.push(`thinking:${result.thinkingLevel}`)
 			const routeMeta = formatRouteMeta(result)
 			if (routeMeta) metaParts.push(routeMeta)
-			const metaText = metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : ""
-			lines.push(`- ${resultStateIcon(state, 0)} ${label}: ${state}${elapsedText}${metaText}`)
+			const metaText =
+				metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : ""
+			lines.push(
+				`- ${resultStateIcon(state, 0)} ${label}: ${state}${elapsedText}${metaText}`,
+			)
 			if (result.retryLog && result.retryLog.length > 0) {
 				lines.push(`  ↳ fallback: ${result.retryLog.join(" ")}`)
 			}
@@ -1504,7 +1768,10 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 	return results
 }
 
-function writePromptToTempFile(agentName: string, prompt: string): { dir: string; filePath: string } {
+function writePromptToTempFile(
+	agentName: string,
+	prompt: string,
+): { dir: string; filePath: string } {
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"))
 	const safeName = agentName.replace(/[^\w.-]+/g, "_")
 	const filePath = path.join(tmpDir, `prompt-${safeName}.md`)
@@ -1528,7 +1795,11 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 }
 
 function getSubagentProcessEnv(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...process.env, PI_SESSION_PLAN_DISABLE: "1", PI_SKIP_VERSION_CHECK: "1" }
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		PI_SESSION_PLAN_DISABLE: "1",
+		PI_SKIP_VERSION_CHECK: "1",
+	}
 	const fastMode = getFastModeState()
 	if (fastMode.active) {
 		env[FAST_MODE_ENV_KEY] = "1"
@@ -1537,7 +1808,9 @@ function getSubagentProcessEnv(): NodeJS.ProcessEnv {
 	return env
 }
 
-export type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void
+export type OnUpdateCallback = (
+	partial: AgentToolResult<SubagentDetails>,
+) => void
 
 function throwToolError(message: string): never {
 	throw new Error(message)
@@ -1560,7 +1833,8 @@ async function runSingleAgentAttempt(
 	const args: string[] = ["--mode", "json", "-p", "--no-session"]
 	if (selectedModel) args.push("--model", selectedModel)
 	if (selectedThinkingLevel) args.push("--thinking", selectedThinkingLevel)
-	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","))
+	if (agent.tools && agent.tools.length > 0)
+		args.push("--tools", agent.tools.join(","))
 
 	let tmpPromptDir: string | null = null
 	let tmpPromptPath: string | null = null
@@ -1574,7 +1848,15 @@ async function runSingleAgentAttempt(
 		exitCode: -1,
 		messages: [],
 		stderr: "",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0,
+			contextTokens: 0,
+			turns: 0,
+		},
 		model: selectedModel,
 		thinkingLevel: selectedThinkingLevel,
 		category,
@@ -1586,12 +1868,22 @@ async function runSingleAgentAttempt(
 
 	const emitUpdate = () => {
 		currentResult.updatedAt = Date.now()
-		if (currentResult.runState !== "completed" && currentResult.runState !== "failed" && currentResult.runState !== "cancelled") {
+		if (
+			currentResult.runState !== "completed" &&
+			currentResult.runState !== "failed" &&
+			currentResult.runState !== "cancelled"
+		) {
 			currentResult.runState = "running"
 		}
 		if (onUpdate) {
 			onUpdate({
-				content: [{ type: "text", text: getFinalOutput(currentResult.messages) || "(running...)" }],
+				content: [
+					{
+						type: "text",
+						text:
+							getFinalOutput(currentResult.messages) || "(running...)",
+					},
+				],
 				details: makeDetails([currentResult]),
 			})
 		}
@@ -1644,13 +1936,14 @@ async function runSingleAgentAttempt(
 							currentResult.usage.cost += usage.cost?.total || 0
 							currentResult.usage.contextTokens = usage.totalTokens || 0
 						}
-						if (!currentResult.model && msg.model) currentResult.model = msg.model
+						if (!currentResult.model && msg.model)
+							currentResult.model = msg.model
 						if (msg.stopReason) currentResult.stopReason = msg.stopReason
-						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage
+						if (msg.errorMessage)
+							currentResult.errorMessage = msg.errorMessage
 					}
 					emitUpdate()
 				}
-
 			}
 
 			proc.stdout.on("data", (data) => {
@@ -1689,8 +1982,13 @@ async function runSingleAgentAttempt(
 		currentResult.exitCode = exitCode
 		currentResult.finishedAt = Date.now()
 		currentResult.updatedAt = currentResult.finishedAt
-		if (wasAborted || currentResult.stopReason === "aborted") currentResult.runState = "cancelled"
-		else if (currentResult.exitCode !== 0 || currentResult.stopReason === "error") currentResult.runState = "failed"
+		if (wasAborted || currentResult.stopReason === "aborted")
+			currentResult.runState = "cancelled"
+		else if (
+			currentResult.exitCode !== 0 ||
+			currentResult.stopReason === "error"
+		)
+			currentResult.runState = "failed"
 		else currentResult.runState = "completed"
 		if (wasAborted) throw new Error("Subagent was aborted")
 		return currentResult
@@ -1739,7 +2037,15 @@ export async function runSingleAgent(
 			exitCode: 1,
 			messages: [],
 			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: 0,
+				contextTokens: 0,
+				turns: 0,
+			},
 			step,
 			category: normalizeCategoryName(category),
 			runState: "failed",
@@ -1750,11 +2056,20 @@ export async function runSingleAgent(
 	}
 
 	const availableModelIds = getAvailableModelIds(modelContext)
-	const plan = resolveRunModelPlan(agent, availableModelIds, modelOverride, category, fallbackModels, thinkingLevelOverride)
+	const plan = resolveRunModelPlan(
+		agent,
+		availableModelIds,
+		modelOverride,
+		category,
+		fallbackModels,
+		thinkingLevelOverride,
+	)
 	const candidates = plan.modelCandidates
 	const retryLog: string[] = []
 	if ((plan.missingCandidates?.length ?? 0) > 0) {
-		retryLog.push(`Skipped unavailable models: ${plan.missingCandidates!.join(", ")}`)
+		retryLog.push(
+			`Skipped unavailable models: ${plan.missingCandidates!.join(", ")}`,
+		)
 	}
 	let attempts = 0
 	let lastResult: SingleResult | undefined
@@ -1781,9 +2096,15 @@ export async function runSingleAgent(
 
 	for (let i = 0; i < candidates.length; i++) {
 		const candidate = candidates[i]
-		if (isModelCoolingDown(candidate) && hasNonCoolingCandidate(candidates, i + 1)) {
+		if (
+			isModelCoolingDown(candidate) &&
+			hasNonCoolingCandidate(candidates, i + 1)
+		) {
 			const coolUntil = modelRetryCooldownUntil.get(candidate) ?? Date.now()
-			const remainingSeconds = Math.max(1, Math.ceil((coolUntil - Date.now()) / 1000))
+			const remainingSeconds = Math.max(
+				1,
+				Math.ceil((coolUntil - Date.now()) / 1000),
+			)
 			retryLog.push(`Skipped ${candidate} (cooldown ${remainingSeconds}s).`)
 			continue
 		}
@@ -1824,7 +2145,9 @@ export async function runSingleAgent(
 			continue
 		}
 
-		retryLog.push(`Retryable failure on ${candidate}; no fallback models remaining.`)
+		retryLog.push(
+			`Retryable failure on ${candidate}; no fallback models remaining.`,
+		)
 		result.retryLog = [...retryLog]
 		return result
 	}
@@ -1861,11 +2184,18 @@ const ThinkingLevelSchema = StringEnum(THINKING_LEVELS, {
 const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	model: Type.Optional(Type.String({ description: "Optional model override for this task." })),
+	cwd: Type.Optional(
+		Type.String({ description: "Working directory for the agent process" }),
+	),
+	model: Type.Optional(
+		Type.String({ description: "Optional model override for this task." }),
+	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
-		Type.String({ description: "Optional routing category (quick, deep, review, visual-engineering, etc.)." }),
+		Type.String({
+			description:
+				"Optional routing category (quick, deep, review, visual-engineering, etc.).",
+		}),
 	),
 	fallbackModels: Type.Optional(
 		Type.Array(Type.String({ description: "Fallback model id." }), {
@@ -1876,12 +2206,23 @@ const TaskItem = Type.Object({
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	model: Type.Optional(Type.String({ description: "Optional model override for this chain step." })),
+	task: Type.String({
+		description: "Task with optional {previous} placeholder for prior output",
+	}),
+	cwd: Type.Optional(
+		Type.String({ description: "Working directory for the agent process" }),
+	),
+	model: Type.Optional(
+		Type.String({
+			description: "Optional model override for this chain step.",
+		}),
+	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
-		Type.String({ description: "Optional routing category (quick, deep, review, visual-engineering, etc.)." }),
+		Type.String({
+			description:
+				"Optional routing category (quick, deep, review, visual-engineering, etc.).",
+		}),
 	),
 	fallbackModels: Type.Optional(
 		Type.Array(Type.String({ description: "Fallback model id." }), {
@@ -1891,25 +2232,45 @@ const ChainItem = Type.Object({
 })
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
-	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
+	description:
+		'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
 	default: "user",
 })
 
 const SubagentParams = Type.Object({
-	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
-	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
-	model: Type.Optional(Type.String({ description: "Optional model override for single mode." })),
+	agent: Type.Optional(
+		Type.String({
+			description: "Name of the agent to invoke (for single mode)",
+		}),
+	),
+	task: Type.Optional(
+		Type.String({ description: "Task to delegate (for single mode)" }),
+	),
+	model: Type.Optional(
+		Type.String({ description: "Optional model override for single mode." }),
+	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
-		Type.String({ description: "Optional routing category for single mode (quick, deep, review, visual-engineering, etc.)." }),
+		Type.String({
+			description:
+				"Optional routing category for single mode (quick, deep, review, visual-engineering, etc.).",
+		}),
 	),
 	fallbackModels: Type.Optional(
 		Type.Array(Type.String({ description: "Fallback model id." }), {
 			description: "Optional fallback model chain for single mode.",
 		}),
 	),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
+	tasks: Type.Optional(
+		Type.Array(TaskItem, {
+			description: "Array of {agent, task} for parallel execution",
+		}),
+	),
+	chain: Type.Optional(
+		Type.Array(ChainItem, {
+			description: "Array of {agent, task} for sequential execution",
+		}),
+	),
 	agentScope: Type.Optional(AgentScopeSchema),
 	confirmProjectAgents: Type.Optional(
 		Type.Boolean({
@@ -1917,7 +2278,11 @@ const SubagentParams = Type.Object({
 			default: true,
 		}),
 	),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
+	cwd: Type.Optional(
+		Type.String({
+			description: "Working directory for the agent process (single mode)",
+		}),
+	),
 	maxConcurrency: Type.Optional(
 		Type.Number({
 			description: `Parallel worker limit for tasks mode (1-${MAX_CONCURRENCY}). Default: ${MAX_CONCURRENCY}.`,
@@ -1926,7 +2291,8 @@ const SubagentParams = Type.Object({
 	),
 	background: Type.Optional(
 		Type.Boolean({
-			description: "If true, enqueue this run as a background job and return immediately.",
+			description:
+				"If true, enqueue this run as a background job and return immediately.",
 			default: false,
 		}),
 	),
@@ -1937,7 +2303,11 @@ const SubagentParams = Type.Object({
 			default: true,
 		}),
 	),
-	jobLabel: Type.Optional(Type.String({ description: "Optional label shown in background job status widget." })),
+	jobLabel: Type.Optional(
+		Type.String({
+			description: "Optional label shown in background job status widget.",
+		}),
+	),
 })
 
 const SubagentJobActionSchema = StringEnum(
@@ -1984,12 +2354,22 @@ const WidgetAgentLimitSchema = Type.Union(
 
 const SubagentJobParams = Type.Object({
 	action: Type.Optional(SubagentJobActionSchema),
-	jobId: Type.Optional(Type.String({ description: "Background job id for status/result/cancel actions." })),
+	jobId: Type.Optional(
+		Type.String({
+			description: "Background job id for status/result/cancel actions.",
+		}),
+	),
 	timeoutSeconds: Type.Optional(
-		Type.Number({ description: "For wait-all: max seconds to wait (default 900).", default: 900 }),
+		Type.Number({
+			description: "For wait-all: max seconds to wait (default 900).",
+			default: 900,
+		}),
 	),
 	pollIntervalMs: Type.Optional(
-		Type.Number({ description: "For wait-all: polling interval in ms (default 1000).", default: 1000 }),
+		Type.Number({
+			description: "For wait-all: polling interval in ms (default 1000).",
+			default: 1000,
+		}),
 	),
 	viewMode: Type.Optional(WidgetDensitySchema),
 	groupBy: Type.Optional(WidgetGroupingSchema),
@@ -2017,11 +2397,14 @@ export default function (pi: ExtensionAPI) {
 	}) => {
 		if (next.grouping) widgetGrouping = next.grouping
 		if (next.density) widgetDensity = next.density
-		if (next.agentDisplayLimit !== undefined) widgetAgentLimit = next.agentDisplayLimit
+		if (next.agentDisplayLimit !== undefined)
+			widgetAgentLimit = next.agentDisplayLimit
 		refreshBackgroundUI()
 	}
 
-	const subjobsCommandItems = (prefix: string): Array<{ value: string; label: string }> | null => {
+	const subjobsCommandItems = (
+		prefix: string,
+	): Array<{ value: string; label: string }> | null => {
 		const options = [
 			"clear",
 			"view compact",
@@ -2079,15 +2462,28 @@ export default function (pi: ExtensionAPI) {
 			SUBAGENT_WIDGET_KEY,
 			(_tui, theme) =>
 				new Text(
-					renderBackgroundWidgetText(jobs, theme, widgetSpinnerTick, widgetDensity, widgetGrouping, widgetAgentLimit),
+					renderBackgroundWidgetText(
+						jobs,
+						theme,
+						widgetSpinnerTick,
+						widgetDensity,
+						widgetGrouping,
+						widgetAgentLimit,
+					),
 					0,
 					0,
 				),
 			{ placement: "belowEditor" },
 		)
 
-		const statusIcon = running > 0 ? SPINNER_FRAMES[widgetSpinnerTick % SPINNER_FRAMES.length] : failed > 0 ? "◐" : "✓"
-		const statusColor = running > 0 ? "warning" : failed > 0 ? "warning" : "success"
+		const statusIcon =
+			running > 0
+				? SPINNER_FRAMES[widgetSpinnerTick % SPINNER_FRAMES.length]
+				: failed > 0
+					? "◐"
+					: "✓"
+		const statusColor =
+			running > 0 ? "warning" : failed > 0 ? "warning" : "success"
 		const statusText =
 			target.ui.theme.fg(statusColor, statusIcon) +
 			" " +
@@ -2103,7 +2499,10 @@ export default function (pi: ExtensionAPI) {
 		const removable = getBackgroundJobs()
 			.filter((job) => job.status !== "running" && job.status !== "queued")
 			.sort((a, b) => a.createdAt - b.createdAt)
-		while (backgroundJobs.size > MAX_BACKGROUND_STORED_JOBS && removable.length > 0) {
+		while (
+			backgroundJobs.size > MAX_BACKGROUND_STORED_JOBS &&
+			removable.length > 0
+		) {
 			const job = removable.shift()
 			if (!job) break
 			backgroundJobs.delete(job.id)
@@ -2117,7 +2516,12 @@ export default function (pi: ExtensionAPI) {
 		if (job.status === "running" || job.status === "queued") return
 
 		const counts = resultCounts(job.details.results)
-		const variant = job.status === "completed" ? "info" : job.status === "cancelled" ? "warning" : "error"
+		const variant =
+			job.status === "completed"
+				? "info"
+				: job.status === "cancelled"
+					? "warning"
+					: "error"
 		const line =
 			`Subagent job ${shortJobId(job.id)} ${job.status}. ` +
 			`${counts.done}/${Math.max(1, counts.total)} done` +
@@ -2125,12 +2529,17 @@ export default function (pi: ExtensionAPI) {
 			(counts.cancelled > 0 ? ` · ${counts.cancelled} cancelled` : "")
 		target.ui.notify(line, variant)
 
-		const remaining = getBackgroundJobs().filter((j) => j.status === "running" || j.status === "queued").length
+		const remaining = getBackgroundJobs().filter(
+			(j) => j.status === "running" || j.status === "queued",
+		).length
 		if (remaining === 0) {
 			const now = Date.now()
 			if (now - lastAllCompleteNotifyAt > 1000) {
 				lastAllCompleteNotifyAt = now
-				target.ui.notify("All background subagent jobs complete. Use /subjobs for summaries.", "info")
+				target.ui.notify(
+					"All background subagent jobs complete. Use /subjobs for summaries.",
+					"info",
+				)
 			}
 		}
 	}
@@ -2148,7 +2557,12 @@ export default function (pi: ExtensionAPI) {
 		const makeDetails =
 			(mode: "single" | "parallel" | "chain") =>
 			(results: SingleResult[]): SubagentDetails =>
-				makeSubagentDetails(mode, job.agentScope, discovery.projectAgentsDir, results)
+				makeSubagentDetails(
+					mode,
+					job.agentScope,
+					discovery.projectAgentsDir,
+					results,
+				)
 
 		const updateDetails = (results: SingleResult[]) => {
 			job.details = makeDetails(job.mode)(results)
@@ -2157,11 +2571,18 @@ export default function (pi: ExtensionAPI) {
 
 		try {
 			if (job.mode === "single") {
-				if (!job.params.agent || !job.params.task) throw new Error("Invalid single background job payload.")
+				if (!job.params.agent || !job.params.task)
+					throw new Error("Invalid single background job payload.")
 				const startedAt = Date.now()
 				const current =
 					job.details.results[0] ??
-					makePlaceholderResult(job.params.agent, job.params.task, "unknown", undefined, job.params.category)
+					makePlaceholderResult(
+						job.params.agent,
+						job.params.task,
+						"unknown",
+						undefined,
+						job.params.category,
+					)
 				current.runState = "running"
 				current.startedAt = startedAt
 				current.updatedAt = startedAt
@@ -2187,10 +2608,17 @@ export default function (pi: ExtensionAPI) {
 				updateDetails([result])
 
 				const isError =
-					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
+					result.exitCode !== 0 ||
+					result.stopReason === "error" ||
+					result.stopReason === "aborted"
 				if (isError) {
-					job.status = result.stopReason === "aborted" ? "cancelled" : "failed"
-					job.errorText = result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
+					job.status =
+						result.stopReason === "aborted" ? "cancelled" : "failed"
+					job.errorText =
+						result.errorMessage ||
+						result.stderr ||
+						getFinalOutput(result.messages) ||
+						"(no output)"
 				} else {
 					job.status = "completed"
 					job.resultText = getFinalOutput(result.messages) || "(no output)"
@@ -2201,53 +2629,73 @@ export default function (pi: ExtensionAPI) {
 			if (job.mode === "parallel") {
 				const tasks = job.params.tasks ?? []
 				if (tasks.length > MAX_PARALLEL_TASKS) {
-					throw new Error(`Too many parallel tasks (${tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
+					throw new Error(
+						`Too many parallel tasks (${tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+					)
 				}
 
 				const allResults = [...job.details.results]
-				const results = await mapWithConcurrencyLimit(tasks, job.maxConcurrency, async (t, index) => {
-					const startedAt = Date.now()
-					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category)
-					current.runState = "running"
-					current.startedAt = startedAt
-					current.updatedAt = startedAt
-					allResults[index] = current
-					updateDetails([...allResults])
-					const result = await runSingleAgent(
-						job.baseCwd,
-						agents,
-						t.agent,
-						t.task,
-						t.cwd,
-						undefined,
-						job.abortController?.signal,
-						(partial) => {
-							const current = partial.details?.results[0]
-							if (current) {
-								allResults[index] = current
-								updateDetails([...allResults])
-							}
-						},
-						makeDetails("parallel"),
-						t.model,
-						t.thinkingLevel,
-						t.category,
-						t.fallbackModels,
-					)
-					allResults[index] = result
-					updateDetails([...allResults])
-					return result
-				})
+				const results = await mapWithConcurrencyLimit(
+					tasks,
+					job.maxConcurrency,
+					async (t, index) => {
+						const startedAt = Date.now()
+						const current =
+							allResults[index] ??
+							makePlaceholderResult(
+								t.agent,
+								t.task,
+								"unknown",
+								undefined,
+								t.category,
+							)
+						current.runState = "running"
+						current.startedAt = startedAt
+						current.updatedAt = startedAt
+						allResults[index] = current
+						updateDetails([...allResults])
+						const result = await runSingleAgent(
+							job.baseCwd,
+							agents,
+							t.agent,
+							t.task,
+							t.cwd,
+							undefined,
+							job.abortController?.signal,
+							(partial) => {
+								const current = partial.details?.results[0]
+								if (current) {
+									allResults[index] = current
+									updateDetails([...allResults])
+								}
+							},
+							makeDetails("parallel"),
+							t.model,
+							t.thinkingLevel,
+							t.category,
+							t.fallbackModels,
+						)
+						allResults[index] = result
+						updateDetails([...allResults])
+						return result
+					},
+				)
 
 				const successCount = results.filter((r) => r.exitCode === 0).length
 				const namedAgents = withAgentInstanceNames(results)
 				const summaries = results.map((r, index) => {
 					const output = getFinalOutput(r.messages)
-					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "")
+					const preview =
+						output.slice(0, 100) + (output.length > 100 ? "..." : "")
 					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`
 				})
 				job.resultText = `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`
-				job.status = results.some((r) => r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted")
+				job.status = results.some(
+					(r) =>
+						r.exitCode !== 0 ||
+						r.stopReason === "error" ||
+						r.stopReason === "aborted",
+				)
 					? "failed"
 					: "completed"
 				return
@@ -2259,9 +2707,20 @@ export default function (pi: ExtensionAPI) {
 
 			for (let i = 0; i < chain.length; i++) {
 				const step = chain[i]
-				const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput)
+				const taskWithContext = step.task.replace(
+					/\{previous\}/g,
+					previousOutput,
+				)
 				const startedAt = Date.now()
-				const current = allResults[i] ?? makePlaceholderResult(step.agent, step.task, "unknown", i + 1, step.category)
+				const current =
+					allResults[i] ??
+					makePlaceholderResult(
+						step.agent,
+						step.task,
+						"unknown",
+						i + 1,
+						step.category,
+					)
 				current.runState = "running"
 				current.startedAt = startedAt
 				current.updatedAt = startedAt
@@ -2292,12 +2751,18 @@ export default function (pi: ExtensionAPI) {
 				updateDetails([...allResults])
 
 				const isError =
-					result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
+					result.exitCode !== 0 ||
+					result.stopReason === "error" ||
+					result.stopReason === "aborted"
 				if (isError) {
-					job.status = result.stopReason === "aborted" ? "cancelled" : "failed"
+					job.status =
+						result.stopReason === "aborted" ? "cancelled" : "failed"
 					job.errorText =
 						`Chain stopped at step ${i + 1} (${step.agent}): ` +
-						(result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)")
+						(result.errorMessage ||
+							result.stderr ||
+							getFinalOutput(result.messages) ||
+							"(no output)")
 					return
 				}
 				previousOutput = getFinalOutput(result.messages)
@@ -2305,21 +2770,33 @@ export default function (pi: ExtensionAPI) {
 
 			job.status = "completed"
 			const finalDone = allResults.filter((r) => r.exitCode !== -1)
-			job.resultText = finalDone.length > 0 ? getFinalOutput(finalDone[finalDone.length - 1].messages) || "(no output)" : "(no output)"
+			job.resultText =
+				finalDone.length > 0
+					? getFinalOutput(finalDone[finalDone.length - 1].messages) ||
+						"(no output)"
+					: "(no output)"
 		} catch (error) {
 			const aborted = job.abortController?.signal.aborted ?? false
 			job.status = aborted ? "cancelled" : "failed"
 			job.errorText = error instanceof Error ? error.message : String(error)
 
-			const fallbackState: SubagentRunState = aborted ? "cancelled" : "failed"
+			const fallbackState: SubagentRunState = aborted
+				? "cancelled"
+				: "failed"
 			let changed = false
 			for (const result of job.details.results) {
 				const state = getResultRunState(result)
-				if (state === "completed" || state === "failed" || state === "cancelled") continue
+				if (
+					state === "completed" ||
+					state === "failed" ||
+					state === "cancelled"
+				)
+					continue
 				result.runState = fallbackState
 				result.updatedAt = Date.now()
 				result.finishedAt = result.updatedAt
-				if (result.exitCode === -1) result.exitCode = fallbackState === "cancelled" ? 130 : 1
+				if (result.exitCode === -1)
+					result.exitCode = fallbackState === "cancelled" ? 130 : 1
 				changed = true
 			}
 			if (changed) updateDetails([...job.details.results])
@@ -2351,7 +2828,11 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
-		installSlashCommandArgumentAutocomplete(ctx, "subjobs", subjobsCommandItems)
+		installSlashCommandArgumentAutocomplete(
+			ctx,
+			"subjobs",
+			subjobsCommandItems,
+		)
 		updateLatestContext(ctx)
 	})
 
@@ -2367,7 +2848,8 @@ export default function (pi: ExtensionAPI) {
 				job.abortController?.abort()
 				job.status = "cancelled"
 				job.finishedAt = Date.now()
-				job.errorText = job.errorText || "Cancelled during session shutdown."
+				job.errorText =
+					job.errorText || "Cancelled during session shutdown."
 			}
 		}
 		refreshBackgroundUI(ctx)
@@ -2401,18 +2883,25 @@ export default function (pi: ExtensionAPI) {
 			const agentScope: AgentScope = params.agentScope ?? "user"
 			const discovery = discoverAgents(ctx.cwd, agentScope)
 			const agents = discovery.agents
-			const confirmProjectAgents = isProjectAgentTrustBypassEnabled() ? (params.confirmProjectAgents ?? true) : true
+			const confirmProjectAgents = isProjectAgentTrustBypassEnabled()
+				? (params.confirmProjectAgents ?? true)
+				: true
 
 			const hasChain = (params.chain?.length ?? 0) > 0
 			const hasTasks = (params.tasks?.length ?? 0) > 0
 			const hasSingle = Boolean(params.agent && params.task)
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle)
+			const modeCount =
+				Number(hasChain) + Number(hasTasks) + Number(hasSingle)
 			const mode = hasChain ? "chain" : hasTasks ? "parallel" : "single"
 			const maxConcurrency = Math.max(
 				1,
-				Math.min(MAX_CONCURRENCY, Math.floor(params.maxConcurrency ?? MAX_CONCURRENCY)),
+				Math.min(
+					MAX_CONCURRENCY,
+					Math.floor(params.maxConcurrency ?? MAX_CONCURRENCY),
+				),
 			)
-			const forceBackgroundForUnstable = params.forceBackgroundForUnstable ?? true
+			const forceBackgroundForUnstable =
+				params.forceBackgroundForUnstable ?? true
 
 			const requestedRuns: Array<{
 				agent: string
@@ -2456,9 +2945,18 @@ export default function (pi: ExtensionAPI) {
 			const unstableRequestedRuns = requestedRuns.filter((run) => {
 				const agent = agents.find((a) => a.name === run.agent)
 				if (agent) {
-					return resolveRunModelPlan(agent, getAvailableModelIds(ctx), run.model, run.category, run.fallbackModels, run.thinkingLevel).unstable
+					return resolveRunModelPlan(
+						agent,
+						getAvailableModelIds(ctx),
+						run.model,
+						run.category,
+						run.fallbackModels,
+						run.thinkingLevel,
+					).unstable
 				}
-				return isUnstableCategory(run.category) || isUnstableModel(run.model)
+				return (
+					isUnstableCategory(run.category) || isUnstableModel(run.model)
+				)
 			})
 
 			const runInBackground =
@@ -2475,14 +2973,20 @@ export default function (pi: ExtensionAPI) {
 				})
 
 			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
-				throwToolError(`Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`)
+				const available =
+					agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
+				throwToolError(
+					`Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`,
+				)
 			}
 
 			if (agentScope === "project" || agentScope === "both") {
 				const requestedAgentNames = new Set<string>()
-				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent)
-				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent)
+				if (params.chain)
+					for (const step of params.chain)
+						requestedAgentNames.add(step.agent)
+				if (params.tasks)
+					for (const t of params.tasks) requestedAgentNames.add(t.agent)
 				if (params.agent) requestedAgentNames.add(params.agent)
 
 				const projectAgentsRequested = Array.from(requestedAgentNames)
@@ -2490,7 +2994,9 @@ export default function (pi: ExtensionAPI) {
 					.filter((a): a is AgentConfig => a?.source === "project")
 
 				if (projectAgentsRequested.length > 0 && confirmProjectAgents) {
-					const names = projectAgentsRequested.map((a) => a.name).join(", ")
+					const names = projectAgentsRequested
+						.map((a) => a.name)
+						.join(", ")
 					const dir = discovery.projectAgentsDir ?? "(unknown)"
 					if (!ctx.hasUI) {
 						throwToolError(
@@ -2503,14 +3009,23 @@ export default function (pi: ExtensionAPI) {
 					)
 					if (!ok)
 						return {
-							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
+							content: [
+								{
+									type: "text",
+									text: "Canceled: project-local agents not approved.",
+								},
+							],
+							details: makeDetails(
+								hasChain ? "chain" : hasTasks ? "parallel" : "single",
+							)([]),
 						}
 				}
 			}
 
 			if (runInBackground) {
-				const sourceByName = new Map(agents.map((agent) => [agent.name, agent.source] as const))
+				const sourceByName = new Map(
+					agents.map((agent) => [agent.name, agent.source] as const),
+				)
 				let initialResults: SingleResult[] = []
 
 				if (hasChain && params.chain) {
@@ -2527,10 +3042,18 @@ export default function (pi: ExtensionAPI) {
 
 				if (hasTasks && params.tasks) {
 					if (params.tasks.length > MAX_PARALLEL_TASKS) {
-						throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
+						throwToolError(
+							`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+						)
 					}
 					initialResults = params.tasks.map((task) =>
-						makePlaceholderResult(task.agent, task.task, sourceByName.get(task.agent) ?? "unknown", undefined, task.category),
+						makePlaceholderResult(
+							task.agent,
+							task.task,
+							sourceByName.get(task.agent) ?? "unknown",
+							undefined,
+							task.category,
+						),
 					)
 				}
 
@@ -2569,7 +3092,12 @@ export default function (pi: ExtensionAPI) {
 						cwd: params.cwd,
 						forceBackgroundForUnstable,
 					},
-					details: makeSubagentDetails(mode, agentScope, discovery.projectAgentsDir, initialResults),
+					details: makeSubagentDetails(
+						mode,
+						agentScope,
+						discovery.projectAgentsDir,
+						initialResults,
+					),
 					abortController: new AbortController(),
 				}
 
@@ -2580,13 +3108,23 @@ export default function (pi: ExtensionAPI) {
 
 				const queuePosition =
 					job.status === "queued"
-						? getBackgroundJobs().filter((j) => j.status === "queued" && j.createdAt <= job.createdAt).length
+						? getBackgroundJobs().filter(
+								(j) =>
+									j.status === "queued" &&
+									j.createdAt <= job.createdAt,
+							).length
 						: 0
-				const positionText = queuePosition > 0 ? ` (queue position ${queuePosition})` : ""
+				const positionText =
+					queuePosition > 0 ? ` (queue position ${queuePosition})` : ""
 				const forcedReason =
-					!params.background && forceBackgroundForUnstable && unstableRequestedRuns.length > 0
+					!params.background &&
+					forceBackgroundForUnstable &&
+					unstableRequestedRuns.length > 0
 						? ` Auto-background enabled for unstable route(s): ${unstableRequestedRuns
-								.map((run) => `${run.agent}${run.category ? `/${run.category}` : ""}`)
+								.map(
+									(run) =>
+										`${run.agent}${run.category ? `/${run.category}` : ""}`,
+								)
 								.join(", ")}.`
 						: ""
 				return {
@@ -2609,7 +3147,10 @@ export default function (pi: ExtensionAPI) {
 
 				for (let i = 0; i < params.chain.length; i++) {
 					const step = params.chain[i]
-					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput)
+					const taskWithContext = step.task.replace(
+						/\{previous\}/g,
+						previousOutput,
+					)
 
 					// Create update callback that includes all previous results
 					const chainUpdate: OnUpdateCallback | undefined = onUpdate
@@ -2645,28 +3186,47 @@ export default function (pi: ExtensionAPI) {
 					results.push(result)
 
 					const isError =
-						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
+						result.exitCode !== 0 ||
+						result.stopReason === "error" ||
+						result.stopReason === "aborted"
 					if (isError) {
 						// Keep delegated agent failures as structured tool results so transcript rendering
 						// and session history retain the partial chain state.
 						const errorMsg =
-							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
+							result.errorMessage ||
+							result.stderr ||
+							getFinalOutput(result.messages) ||
+							"(no output)"
 						return {
-							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
+							content: [
+								{
+									type: "text",
+									text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}`,
+								},
+							],
 							details: makeDetails("chain")(results),
 						}
 					}
 					previousOutput = getFinalOutput(result.messages)
 				}
 				return {
-					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
+					content: [
+						{
+							type: "text",
+							text:
+								getFinalOutput(results[results.length - 1].messages) ||
+								"(no output)",
+						},
+					],
 					details: makeDetails("chain")(results),
 				}
 			}
 
 			if (params.tasks && params.tasks.length > 0) {
 				if (params.tasks.length > MAX_PARALLEL_TASKS) {
-					throwToolError(`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`)
+					throwToolError(
+						`Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+					)
 				}
 
 				// Track all results for streaming updates
@@ -2686,7 +3246,8 @@ export default function (pi: ExtensionAPI) {
 				const emitParallelUpdate = () => {
 					if (onUpdate) {
 						const counts = resultCounts(allResults)
-						const queuedText = counts.pending > 0 ? `, ${counts.pending} queued` : ""
+						const queuedText =
+							counts.pending > 0 ? `, ${counts.pending} queued` : ""
 						onUpdate({
 							content: [
 								{
@@ -2699,46 +3260,59 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 
-				const results = await mapWithConcurrencyLimit(params.tasks, maxConcurrency, async (t, index) => {
-					const startedAt = Date.now()
-					const current = allResults[index] ?? makePlaceholderResult(t.agent, t.task, "unknown", undefined, t.category)
-					current.runState = "running"
-					current.startedAt = startedAt
-					current.updatedAt = startedAt
-					allResults[index] = current
-					emitParallelUpdate()
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						t.agent,
-						t.task,
-						t.cwd,
-						undefined,
-						signal,
-						// Per-task update callback
-						(partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0]
-								emitParallelUpdate()
-							}
-						},
-						makeDetails("parallel"),
-						t.model,
-						t.thinkingLevel,
-						t.category,
-						t.fallbackModels,
-						ctx,
-					)
-					allResults[index] = result
-					emitParallelUpdate()
-					return result
-				})
+				const results = await mapWithConcurrencyLimit(
+					params.tasks,
+					maxConcurrency,
+					async (t, index) => {
+						const startedAt = Date.now()
+						const current =
+							allResults[index] ??
+							makePlaceholderResult(
+								t.agent,
+								t.task,
+								"unknown",
+								undefined,
+								t.category,
+							)
+						current.runState = "running"
+						current.startedAt = startedAt
+						current.updatedAt = startedAt
+						allResults[index] = current
+						emitParallelUpdate()
+						const result = await runSingleAgent(
+							ctx.cwd,
+							agents,
+							t.agent,
+							t.task,
+							t.cwd,
+							undefined,
+							signal,
+							// Per-task update callback
+							(partial) => {
+								if (partial.details?.results[0]) {
+									allResults[index] = partial.details.results[0]
+									emitParallelUpdate()
+								}
+							},
+							makeDetails("parallel"),
+							t.model,
+							t.thinkingLevel,
+							t.category,
+							t.fallbackModels,
+							ctx,
+						)
+						allResults[index] = result
+						emitParallelUpdate()
+						return result
+					},
+				)
 
 				const successCount = results.filter((r) => r.exitCode === 0).length
 				const namedAgents = withAgentInstanceNames(results)
 				const summaries = results.map((r, index) => {
 					const output = getFinalOutput(r.messages)
-					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "")
+					const preview =
+						output.slice(0, 100) + (output.length > 100 ? "..." : "")
 					return `[${namedAgents[index]}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`
 				})
 				return {
@@ -2769,24 +3343,41 @@ export default function (pi: ExtensionAPI) {
 					params.fallbackModels,
 					ctx,
 				)
-				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted"
+				const isError =
+					result.exitCode !== 0 ||
+					result.stopReason === "error" ||
+					result.stopReason === "aborted"
 				if (isError) {
 					// Keep delegated agent failures as structured tool results so transcript rendering
 					// and session history retain the subagent output and metadata.
 					const errorMsg =
-						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)"
+						result.errorMessage ||
+						result.stderr ||
+						getFinalOutput(result.messages) ||
+						"(no output)"
 					return {
-						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
+						content: [
+							{
+								type: "text",
+								text: `Agent ${result.stopReason || "failed"}: ${errorMsg}`,
+							},
+						],
 						details: makeDetails("single")([result]),
 					}
 				}
 				return {
-					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
+					content: [
+						{
+							type: "text",
+							text: getFinalOutput(result.messages) || "(no output)",
+						},
+					],
 					details: makeDetails("single")([result]),
 				}
 			}
 
-			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
+			const available =
+				agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none"
 			throwToolError(`Invalid parameters. Available agents: ${available}`)
 		},
 
@@ -2802,7 +3393,10 @@ export default function (pi: ExtensionAPI) {
 					const step = args.chain[i]
 					// Clean up {previous} placeholder for display
 					const cleanTask = step.task.replace(/\{previous\}/g, "").trim()
-					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask
+					const preview =
+						cleanTask.length > 40
+							? `${cleanTask.slice(0, 40)}...`
+							: cleanTask
 					const routeText = step.model
 						? theme.fg("muted", ` (${step.model})`)
 						: step.category
@@ -2816,7 +3410,8 @@ export default function (pi: ExtensionAPI) {
 						routeText +
 						theme.fg("dim", ` ${preview}`)
 				}
-				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`
+				if (args.chain.length > 3)
+					text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`
 				return new Text(text, 0, 0)
 			}
 			if (args.tasks && args.tasks.length > 0) {
@@ -2825,7 +3420,8 @@ export default function (pi: ExtensionAPI) {
 					theme.fg("accent", `parallel (${args.tasks.length} tasks)`) +
 					theme.fg("muted", ` [${scopeLabel}]`)
 				for (const [index, t] of args.tasks.slice(0, 3).entries()) {
-					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task
+					const preview =
+						t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task
 					const routeText = t.model
 						? theme.fg("muted", ` (${t.model})`)
 						: t.category
@@ -2833,11 +3429,16 @@ export default function (pi: ExtensionAPI) {
 							: ""
 					text += `\n  ${theme.fg("muted", `${index + 1}.`)} ${theme.fg("accent", t.agent)}${routeText}${theme.fg("dim", ` ${preview}`)}`
 				}
-				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`
+				if (args.tasks.length > 3)
+					text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`
 				return new Text(text, 0, 0)
 			}
 			const agentName = args.agent || "..."
-			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "..."
+			const preview = args.task
+				? args.task.length > 60
+					? `${args.task.slice(0, 60)}...`
+					: args.task
+				: "..."
 			const routeText = args.model
 				? theme.fg("muted", ` (${args.model})`)
 				: args.category
@@ -2856,19 +3457,27 @@ export default function (pi: ExtensionAPI) {
 			const details = result.details as SubagentDetails | undefined
 			if (!details || details.results.length === 0) {
 				const text = result.content[0]
-				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0)
+				return new Text(
+					text?.type === "text" ? text.text : "(no output)",
+					0,
+					0,
+				)
 			}
 
 			const mdTheme = getMarkdownTheme()
 
 			const renderDisplayItems = (items: DisplayItem[], limit?: number) => {
 				const toShow = limit ? items.slice(-limit) : items
-				const skipped = limit && items.length > limit ? items.length - limit : 0
+				const skipped =
+					limit && items.length > limit ? items.length - limit : 0
 				let text = ""
-				if (skipped > 0) text += theme.fg("muted", `... ${skipped} earlier items\n`)
+				if (skipped > 0)
+					text += theme.fg("muted", `... ${skipped} earlier items\n`)
 				for (const item of toShow) {
 					if (item.type === "text") {
-						const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n")
+						const preview = expanded
+							? item.text
+							: item.text.split("\n").slice(0, 3).join("\n")
 						text += `${theme.fg("toolOutput", preview)}\n`
 					} else {
 						text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`
@@ -2893,26 +3502,56 @@ export default function (pi: ExtensionAPI) {
 						header += ` ${theme.fg("muted", `[${runState}]`)}`
 					}
 					const routeMeta = formatRouteMeta(r)
-					if (routeMeta) header += ` ${theme.fg("muted", `[${routeMeta}]`)}`
-					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`
+					if (routeMeta)
+						header += ` ${theme.fg("muted", `[${routeMeta}]`)}`
+					if (isError && r.stopReason)
+						header += ` ${theme.fg("error", `[${r.stopReason}]`)}`
 					container.addChild(new Text(header, 0, 0))
 					if (isError && r.errorMessage)
-						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0))
+						container.addChild(
+							new Text(
+								theme.fg("error", `Error: ${r.errorMessage}`),
+								0,
+								0,
+							),
+						)
 					if (r.retryLog && r.retryLog.length > 0)
-						container.addChild(new Text(theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`), 0, 0))
+						container.addChild(
+							new Text(
+								theme.fg(
+									"warning",
+									`Fallback: ${r.retryLog.join(" ")}`,
+								),
+								0,
+								0,
+							),
+						)
 					container.addChild(new Spacer(1))
-					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0))
-					container.addChild(new Text(formatTaskPreviewBlock(r.task, theme), 0, 0))
+					container.addChild(
+						new Text(theme.fg("muted", "─── Task ───"), 0, 0),
+					)
+					container.addChild(
+						new Text(formatTaskPreviewBlock(r.task, theme), 0, 0),
+					)
 					container.addChild(new Spacer(1))
-					container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0))
+					container.addChild(
+						new Text(theme.fg("muted", "─── Output ───"), 0, 0),
+					)
 					if (displayItems.length === 0 && !finalOutput) {
-						container.addChild(new Text(theme.fg("muted", "(no output)"), 0, 0))
+						container.addChild(
+							new Text(theme.fg("muted", "(no output)"), 0, 0),
+						)
 					} else {
 						for (const item of displayItems) {
 							if (item.type === "toolCall")
 								container.addChild(
 									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										theme.fg("muted", "→ ") +
+											formatToolCall(
+												item.name,
+												item.args,
+												theme.fg.bind(theme),
+											),
 										0,
 										0,
 									),
@@ -2920,10 +3559,16 @@ export default function (pi: ExtensionAPI) {
 						}
 						if (finalOutput) {
 							container.addChild(new Spacer(1))
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
+							container.addChild(
+								new Markdown(finalOutput.trim(), 0, 0, mdTheme),
+							)
 						}
 					}
-					const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel)
+					const usageStr = formatUsageStats(
+						r.usage,
+						r.model,
+						r.thinkingLevel,
+					)
 					if (usageStr) {
 						container.addChild(new Spacer(1))
 						container.addChild(new Text(theme.fg("dim", usageStr), 0, 0))
@@ -2932,17 +3577,22 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`
-				if (runState !== "completed") text += ` ${theme.fg("muted", `[${runState}]`)}`
+				if (runState !== "completed")
+					text += ` ${theme.fg("muted", `[${runState}]`)}`
 				const routeMeta = formatRouteMeta(r)
 				if (routeMeta) text += ` ${theme.fg("muted", `[${routeMeta}]`)}`
-				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`
-				if (isError && r.errorMessage) text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`
-				if (r.retryLog && r.retryLog.length > 0) text += `\n${theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`)}`
+				if (isError && r.stopReason)
+					text += ` ${theme.fg("error", `[${r.stopReason}]`)}`
+				if (isError && r.errorMessage)
+					text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`
+				if (r.retryLog && r.retryLog.length > 0)
+					text += `\n${theme.fg("warning", `Fallback: ${r.retryLog.join(" ")}`)}`
 				else if (displayItems.length === 0)
 					text += `\n${theme.fg("muted", isRunning ? "(running...)" : "(no output)")}`
 				else {
 					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`
-					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
+					if (displayItems.length > COLLAPSED_ITEM_COUNT)
+						text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
 				}
 				const usageStr = formatUsageStats(r.usage, r.model, r.thinkingLevel)
 				if (usageStr) text += `\n${theme.fg("dim", usageStr)}`
@@ -2950,7 +3600,14 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			const aggregateUsage = (results: SingleResult[]) => {
-				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 }
+				const total = {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					cost: 0,
+					turns: 0,
+				}
 				for (const r of results) {
 					total.input += r.usage.input
 					total.output += r.usage.output
@@ -2979,15 +3636,25 @@ export default function (pi: ExtensionAPI) {
 					const container = new Container()
 					container.addChild(
 						new Text(
-							icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", status),
+							icon +
+								" " +
+								theme.fg("toolTitle", theme.bold("chain ")) +
+								theme.fg("accent", status),
 							0,
 							0,
 						),
 					)
 					const chainTaskHint = getTaskPreviewHint(
-						getTaskPreview(details.results.find((entry) => getTaskPreview(entry.task).canToggle)?.task ?? ""),
+						getTaskPreview(
+							details.results.find(
+								(entry) => getTaskPreview(entry.task).canToggle,
+							)?.task ?? "",
+						),
 					)
-					if (chainTaskHint) container.addChild(new Text(theme.fg("muted", chainTaskHint), 0, 0))
+					if (chainTaskHint)
+						container.addChild(
+							new Text(theme.fg("muted", chainTaskHint), 0, 0),
+						)
 
 					for (let i = 0; i < details.results.length; i++) {
 						const r = details.results[i]
@@ -2995,7 +3662,10 @@ export default function (pi: ExtensionAPI) {
 						const rIcon = runStateIconThemed(runState, theme, i)
 						const displayItems = getDisplayItems(r.messages)
 						const finalOutput = getFinalOutput(r.messages)
-						const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i])
+						const chainAgentLabel = formatAgentTabLabel(
+							r.agent,
+							chainAgentNames[i],
+						)
 						const chainAgentColor = getAgentTypeColor(r.agent)
 
 						container.addChild(new Spacer(1))
@@ -3006,14 +3676,21 @@ export default function (pi: ExtensionAPI) {
 								0,
 							),
 						)
-						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0))
+						container.addChild(
+							new Text(formatTaskPreviewInline(r.task, theme), 0, 0),
+						)
 
 						// Show tool calls
 						for (const item of displayItems) {
 							if (item.type === "toolCall") {
 								container.addChild(
 									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										theme.fg("muted", "→ ") +
+											formatToolCall(
+												item.name,
+												item.args,
+												theme.fg.bind(theme),
+											),
 										0,
 										0,
 									),
@@ -3024,29 +3701,49 @@ export default function (pi: ExtensionAPI) {
 						// Show final output as markdown
 						if (finalOutput) {
 							container.addChild(new Spacer(1))
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
+							container.addChild(
+								new Markdown(finalOutput.trim(), 0, 0, mdTheme),
+							)
 						}
 
-						const stepUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel)
-						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0))
+						const stepUsage = formatUsageStats(
+							r.usage,
+							r.model,
+							r.thinkingLevel,
+						)
+						if (stepUsage)
+							container.addChild(
+								new Text(theme.fg("dim", stepUsage), 0, 0),
+							)
 					}
 
-					const usageStr = formatUsageStats(aggregateUsage(details.results))
+					const usageStr = formatUsageStats(
+						aggregateUsage(details.results),
+					)
 					if (usageStr) {
 						container.addChild(new Spacer(1))
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0))
+						container.addChild(
+							new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0),
+						)
 					}
 					return container
 				}
 
 				// Collapsed view
-				let text = icon + " " + theme.fg("toolTitle", theme.bold("chain ")) + theme.fg("accent", status)
+				let text =
+					icon +
+					" " +
+					theme.fg("toolTitle", theme.bold("chain ")) +
+					theme.fg("accent", status)
 				for (let i = 0; i < details.results.length; i++) {
 					const r = details.results[i]
 					const runState = getResultRunState(r)
 					const rIcon = runStateIconThemed(runState, theme, i)
 					const displayItems = getDisplayItems(r.messages)
-					const chainAgentLabel = formatAgentTabLabel(r.agent, chainAgentNames[i])
+					const chainAgentLabel = formatAgentTabLabel(
+						r.agent,
+						chainAgentNames[i],
+					)
 					const chainAgentColor = getAgentTypeColor(r.agent)
 					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg(chainAgentColor, `${getAgentTypeIcon(r.agent)} ${chainAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`
 					if (displayItems.length === 0)
@@ -3082,9 +3779,16 @@ export default function (pi: ExtensionAPI) {
 						),
 					)
 					const parallelTaskHint = getTaskPreviewHint(
-						getTaskPreview(details.results.find((entry) => getTaskPreview(entry.task).canToggle)?.task ?? ""),
+						getTaskPreview(
+							details.results.find(
+								(entry) => getTaskPreview(entry.task).canToggle,
+							)?.task ?? "",
+						),
 					)
-					if (parallelTaskHint) container.addChild(new Text(theme.fg("muted", parallelTaskHint), 0, 0))
+					if (parallelTaskHint)
+						container.addChild(
+							new Text(theme.fg("muted", parallelTaskHint), 0, 0),
+						)
 
 					for (let i = 0; i < details.results.length; i++) {
 						const r = details.results[i]
@@ -3092,7 +3796,10 @@ export default function (pi: ExtensionAPI) {
 						const rIcon = runStateIconThemed(runState, theme, i)
 						const displayItems = getDisplayItems(r.messages)
 						const finalOutput = getFinalOutput(r.messages)
-						const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i])
+						const parallelAgentLabel = formatAgentTabLabel(
+							r.agent,
+							parallelAgentNames[i],
+						)
 						const parallelAgentColor = getAgentTypeColor(r.agent)
 
 						container.addChild(new Spacer(1))
@@ -3103,14 +3810,21 @@ export default function (pi: ExtensionAPI) {
 								0,
 							),
 						)
-						container.addChild(new Text(formatTaskPreviewInline(r.task, theme), 0, 0))
+						container.addChild(
+							new Text(formatTaskPreviewInline(r.task, theme), 0, 0),
+						)
 
 						// Show tool calls
 						for (const item of displayItems) {
 							if (item.type === "toolCall") {
 								container.addChild(
 									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
+										theme.fg("muted", "→ ") +
+											formatToolCall(
+												item.name,
+												item.args,
+												theme.fg.bind(theme),
+											),
 										0,
 										0,
 									),
@@ -3121,17 +3835,30 @@ export default function (pi: ExtensionAPI) {
 						// Show final output as markdown
 						if (finalOutput) {
 							container.addChild(new Spacer(1))
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme))
+							container.addChild(
+								new Markdown(finalOutput.trim(), 0, 0, mdTheme),
+							)
 						}
 
-						const taskUsage = formatUsageStats(r.usage, r.model, r.thinkingLevel)
-						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0))
+						const taskUsage = formatUsageStats(
+							r.usage,
+							r.model,
+							r.thinkingLevel,
+						)
+						if (taskUsage)
+							container.addChild(
+								new Text(theme.fg("dim", taskUsage), 0, 0),
+							)
 					}
 
-					const usageStr = formatUsageStats(aggregateUsage(details.results))
+					const usageStr = formatUsageStats(
+						aggregateUsage(details.results),
+					)
 					if (usageStr) {
 						container.addChild(new Spacer(1))
-						container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0))
+						container.addChild(
+							new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0),
+						)
 					}
 					return container
 				}
@@ -3143,7 +3870,10 @@ export default function (pi: ExtensionAPI) {
 					const runState = getResultRunState(r)
 					const rIcon = runStateIconThemed(runState, theme, i)
 					const displayItems = getDisplayItems(r.messages)
-					const parallelAgentLabel = formatAgentTabLabel(r.agent, parallelAgentNames[i])
+					const parallelAgentLabel = formatAgentTabLabel(
+						r.agent,
+						parallelAgentNames[i],
+					)
 					const parallelAgentColor = getAgentTypeColor(r.agent)
 					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg(parallelAgentColor, `${getAgentTypeIcon(r.agent)} ${parallelAgentLabel}`)} ${rIcon} ${theme.fg("muted", `[${runStateLabel(runState)}]`)}`
 					if (displayItems.length === 0)
@@ -3151,22 +3881,31 @@ export default function (pi: ExtensionAPI) {
 					else text += `\n${renderDisplayItems(displayItems, 5)}`
 				}
 				if (!isRunning) {
-					const usageStr = formatUsageStats(aggregateUsage(details.results))
-					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`
+					const usageStr = formatUsageStats(
+						aggregateUsage(details.results),
+					)
+					if (usageStr)
+						text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`
 				}
-				if (!expanded) text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
+				if (!expanded)
+					text += `\n${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`
 				return new Text(text, 0, 0)
 			}
 
 			const text = result.content[0]
-			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0)
+			return new Text(
+				text?.type === "text" ? text.text : "(no output)",
+				0,
+				0,
+			)
 		},
 	})
 
 	pi.registerTool({
 		name: "subagent_jobs",
 		label: "Subagent Jobs",
-		promptSnippet: "Inspect, wait on, cancel, clear, or reconfigure background subagent jobs.",
+		promptSnippet:
+			"Inspect, wait on, cancel, clear, or reconfigure background subagent jobs.",
 		promptGuidelines: [
 			"Use subagent_jobs after background subagent runs to check status, fetch results, cancel work, or wait for all jobs to finish.",
 		],
@@ -3194,7 +3933,12 @@ export default function (pi: ExtensionAPI) {
 				}
 				refreshBackgroundUI(ctx)
 				return {
-					content: [{ type: "text", text: `Cleared ${removed} completed/failed/cancelled jobs.` }],
+					content: [
+						{
+							type: "text",
+							text: `Cleared ${removed} completed/failed/cancelled jobs.`,
+						},
+					],
 					details: { removed },
 				}
 			}
@@ -3203,44 +3947,93 @@ export default function (pi: ExtensionAPI) {
 				refreshBackgroundUI(ctx)
 				return {
 					content: [{ type: "text", text: getWidgetConfigText() }],
-					details: { grouping: widgetGrouping, density: widgetDensity, agentDisplayLimit: widgetAgentLimit },
+					details: {
+						grouping: widgetGrouping,
+						density: widgetDensity,
+						agentDisplayLimit: widgetAgentLimit,
+					},
 				}
 			}
 
 			if (action === "widget-set") {
-				if (!params.groupBy && !params.viewMode && params.agentDisplayLimit === undefined) {
-					throwToolError("Provide groupBy, viewMode, and/or agentDisplayLimit for widget-set.")
+				if (
+					!params.groupBy &&
+					!params.viewMode &&
+					params.agentDisplayLimit === undefined
+				) {
+					throwToolError(
+						"Provide groupBy, viewMode, and/or agentDisplayLimit for widget-set.",
+					)
 				}
-				const nextGrouping = params.groupBy === "job" || params.groupBy === "agent" ? params.groupBy : undefined
+				const nextGrouping =
+					params.groupBy === "job" || params.groupBy === "agent"
+						? params.groupBy
+						: undefined
 				const nextDensity =
-					params.viewMode === "detailed" || params.viewMode === "compact" ? params.viewMode : undefined
-				const nextAgentLimit = parseWidgetAgentLimit(params.agentDisplayLimit)
-				if (params.agentDisplayLimit !== undefined && nextAgentLimit === undefined) {
-					throwToolError(`agentDisplayLimit must be "all", "default", or a number from 1-${MAX_WIDGET_AGENT_LIMIT}.`)
+					params.viewMode === "detailed" || params.viewMode === "compact"
+						? params.viewMode
+						: undefined
+				const nextAgentLimit = parseWidgetAgentLimit(
+					params.agentDisplayLimit,
+				)
+				if (
+					params.agentDisplayLimit !== undefined &&
+					nextAgentLimit === undefined
+				) {
+					throwToolError(
+						`agentDisplayLimit must be "all", "default", or a number from 1-${MAX_WIDGET_AGENT_LIMIT}.`,
+					)
 				}
-				applyWidgetConfig({ grouping: nextGrouping, density: nextDensity, agentDisplayLimit: nextAgentLimit })
+				applyWidgetConfig({
+					grouping: nextGrouping,
+					density: nextDensity,
+					agentDisplayLimit: nextAgentLimit,
+				})
 				refreshBackgroundUI(ctx)
 				return {
-					content: [{ type: "text", text: `Updated widget. ${getWidgetConfigText()}` }],
-					details: { grouping: widgetGrouping, density: widgetDensity, agentDisplayLimit: widgetAgentLimit },
+					content: [
+						{
+							type: "text",
+							text: `Updated widget. ${getWidgetConfigText()}`,
+						},
+					],
+					details: {
+						grouping: widgetGrouping,
+						density: widgetDensity,
+						agentDisplayLimit: widgetAgentLimit,
+					},
 				}
 			}
 
 			if (action === "wait-all") {
-				const timeoutMs = Math.max(1000, Math.floor((params.timeoutSeconds ?? 900) * 1000))
-				const pollMs = Math.max(100, Math.floor(params.pollIntervalMs ?? 1000))
+				const timeoutMs = Math.max(
+					1000,
+					Math.floor((params.timeoutSeconds ?? 900) * 1000),
+				)
+				const pollMs = Math.max(
+					100,
+					Math.floor(params.pollIntervalMs ?? 1000),
+				)
 				const started = Date.now()
 
 				try {
 					while (true) {
 						const currentJobs = getBackgroundJobs()
-						const active = currentJobs.filter((job) => job.status === "running" || job.status === "queued")
+						const active = currentJobs.filter(
+							(job) =>
+								job.status === "running" || job.status === "queued",
+						)
 						refreshBackgroundUI(ctx)
 
 						if (active.length === 0) {
 							return {
-								content: [{ type: "text", text: renderJobsText(currentJobs) }],
-								details: { waitedMs: Date.now() - started, count: currentJobs.length },
+								content: [
+									{ type: "text", text: renderJobsText(currentJobs) },
+								],
+								details: {
+									waitedMs: Date.now() - started,
+									count: currentJobs.length,
+								},
 							}
 						}
 
@@ -3263,15 +4056,24 @@ export default function (pi: ExtensionAPI) {
 						await sleep(pollMs, signal)
 					}
 				} catch (error) {
-					if (error instanceof Error && error.message.startsWith("Timed out waiting for background jobs.")) {
+					if (
+						error instanceof Error &&
+						error.message.startsWith(
+							"Timed out waiting for background jobs.",
+						)
+					) {
 						throw error
 					}
-					throwToolError(`Wait interrupted: ${error instanceof Error ? error.message : String(error)}`)
+					throwToolError(
+						`Wait interrupted: ${error instanceof Error ? error.message : String(error)}`,
+					)
 				}
 			}
 
 			if (!params.jobId) {
-				throwToolError("jobId is required for status/result/cancel actions.")
+				throwToolError(
+					"jobId is required for status/result/cancel actions.",
+				)
 			}
 
 			const job = backgroundJobs.get(params.jobId)
@@ -3290,7 +4092,12 @@ export default function (pi: ExtensionAPI) {
 			if (action === "result") {
 				return {
 					content: [{ type: "text", text: renderJobResult(job) }],
-					details: { jobId: job.id, status: job.status, mode: job.mode, details: job.details },
+					details: {
+						jobId: job.id,
+						status: job.status,
+						mode: job.mode,
+						details: job.details,
+					},
 				}
 			}
 
@@ -3302,7 +4109,12 @@ export default function (pi: ExtensionAPI) {
 					job.errorText = "Cancelled before start."
 					for (const result of job.details.results) {
 						const state = getResultRunState(result)
-						if (state === "completed" || state === "failed" || state === "cancelled") continue
+						if (
+							state === "completed" ||
+							state === "failed" ||
+							state === "cancelled"
+						)
+							continue
 						result.runState = "cancelled"
 						result.updatedAt = now
 						result.finishedAt = now
@@ -3310,7 +4122,9 @@ export default function (pi: ExtensionAPI) {
 					}
 					refreshBackgroundUI(ctx)
 					return {
-						content: [{ type: "text", text: `Cancelled queued job ${job.id}.` }],
+						content: [
+							{ type: "text", text: `Cancelled queued job ${job.id}.` },
+						],
 						details: { jobId: job.id, status: job.status },
 					}
 				}
@@ -3319,13 +4133,23 @@ export default function (pi: ExtensionAPI) {
 					job.abortController?.abort()
 					refreshBackgroundUI(ctx)
 					return {
-						content: [{ type: "text", text: `Cancellation requested for running job ${job.id}.` }],
+						content: [
+							{
+								type: "text",
+								text: `Cancellation requested for running job ${job.id}.`,
+							},
+						],
 						details: { jobId: job.id, status: job.status },
 					}
 				}
 
 				return {
-					content: [{ type: "text", text: `Job ${job.id} is already ${job.status}.` }],
+					content: [
+						{
+							type: "text",
+							text: `Job ${job.id} is already ${job.status}.`,
+						},
+					],
 					details: { jobId: job.id, status: job.status },
 				}
 			}
@@ -3362,12 +4186,18 @@ export default function (pi: ExtensionAPI) {
 					return
 				}
 				if (option !== "compact" && option !== "detailed") {
-					ctx.ui.notify("Usage: /subjobs view [compact|detailed]", "warning")
+					ctx.ui.notify(
+						"Usage: /subjobs view [compact|detailed]",
+						"warning",
+					)
 					return
 				}
 				applyWidgetConfig({ density: option })
 				refreshBackgroundUI(ctx)
-				ctx.ui.notify(`Updated widget view to ${option}. ${getWidgetConfigText()}`, "info")
+				ctx.ui.notify(
+					`Updated widget view to ${option}. ${getWidgetConfigText()}`,
+					"info",
+				)
 				return
 			}
 
@@ -3382,7 +4212,10 @@ export default function (pi: ExtensionAPI) {
 				}
 				applyWidgetConfig({ grouping: option })
 				refreshBackgroundUI(ctx)
-				ctx.ui.notify(`Updated widget grouping to ${option}. ${getWidgetConfigText()}`, "info")
+				ctx.ui.notify(
+					`Updated widget grouping to ${option}. ${getWidgetConfigText()}`,
+					"info",
+				)
 				return
 			}
 
@@ -3391,15 +4224,26 @@ export default function (pi: ExtensionAPI) {
 					ctx.ui.notify(getWidgetConfigText(), "info")
 					return
 				}
-				const rawLimit = option === "all" || option === "default" ? option : /^\d+$/.test(option) ? Number(option) : undefined
+				const rawLimit =
+					option === "all" || option === "default"
+						? option
+						: /^\d+$/.test(option)
+							? Number(option)
+							: undefined
 				const nextAgentLimit = parseWidgetAgentLimit(rawLimit)
 				if (nextAgentLimit === undefined) {
-					ctx.ui.notify(`Usage: /subjobs agents [all|default|1-${MAX_WIDGET_AGENT_LIMIT}]`, "warning")
+					ctx.ui.notify(
+						`Usage: /subjobs agents [all|default|1-${MAX_WIDGET_AGENT_LIMIT}]`,
+						"warning",
+					)
 					return
 				}
 				applyWidgetConfig({ agentDisplayLimit: nextAgentLimit })
 				refreshBackgroundUI(ctx)
-				ctx.ui.notify(`Updated widget agent display limit to ${formatWidgetAgentLimit(nextAgentLimit)}. ${getWidgetConfigText()}`, "info")
+				ctx.ui.notify(
+					`Updated widget agent display limit to ${formatWidgetAgentLimit(nextAgentLimit)}. ${getWidgetConfigText()}`,
+					"info",
+				)
 				return
 			}
 
@@ -3419,7 +4263,10 @@ export default function (pi: ExtensionAPI) {
 				return
 			}
 
-			ctx.ui.notify(`${renderJobsText(getBackgroundJobs())}\n${getWidgetConfigText()}`, "info")
+			ctx.ui.notify(
+				`${renderJobsText(getBackgroundJobs())}\n${getWidgetConfigText()}`,
+				"info",
+			)
 			refreshBackgroundUI(ctx)
 		},
 	})

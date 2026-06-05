@@ -1,63 +1,66 @@
 {
-  "name": "pi-tools",
-  "version": "0.1.0",
-  "private": true,
-  "packageManager": "pnpm@11.3.0",
-  "engines": {
-    "node": ">=20"
-  },
-  "description": "Custom Pi package and companion packages, user config templates, prompts, skills, and eval fixtures.",
-  "license": "MIT",
-  "keywords": [
-    "pi-package"
-  ],
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "check": "pnpm -s check:layout && pnpm -s typecheck",
-    "check:layout": "bash scripts/check-layout.sh",
-    "typecheck": "tsc --noEmit",
-    "pi:link-config": "bash scripts/link-agent-config.sh --apply"
-  },
-  "pi": {
-    "extensions": [
-      "./src/extensions/box-editor.ts",
-      "./src/extensions/notify.ts",
-      "./src/extensions/theme-hotkey.ts",
-      "./src/extensions/fast-mode.ts",
-      "./src/extensions/btw.ts",
-      "./src/extensions/cost-audit.ts",
-      "./src/extensions/copy-last-as-md.ts",
-      "./src/extensions/verify-command.ts",
-      "./src/extensions/guard.ts",
-      "./src/extensions/user-choice.ts",
-      "./src/extensions/memory.ts",
-      "./src/extensions/session-plan/index.ts",
-      "./src/extensions/goal-loop.ts",
-      "./src/extensions/subagent/index.ts",
-      "./src/extensions/workflow/index.ts",
-      "./src/extensions/workspace-id-guard.ts",
-      "./src/extensions/bash-orphan-cleanup.ts",
-      "./src/extensions/bash-output-compression.ts",
-      "./src/extensions/autoresearch-project-toggle.ts"
-    ]
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-agent-core": "*",
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*",
-    "typebox": "*"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.78.0",
-    "@earendil-works/pi-ai": "0.78.0",
-    "@earendil-works/pi-coding-agent": "0.78.0",
-    "@earendil-works/pi-tui": "0.78.0",
-    "@types/node": "24.12.4",
-    "@types/turndown": "^5.0.5",
-    "typebox": "1.1.38",
-    "typescript": "5.9.3"
-  }
+	"name": "pi-tools",
+	"version": "0.1.0",
+	"private": true,
+	"packageManager": "pnpm@11.3.0",
+	"engines": {
+		"node": ">=20"
+	},
+	"description": "Custom Pi package and companion packages, user config templates, prompts, skills, and eval fixtures.",
+	"license": "MIT",
+	"keywords": [
+		"pi-package"
+	],
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"check": "pnpm -s check:layout && pnpm -s format:check && pnpm -s typecheck",
+		"check:layout": "bash scripts/check-layout.sh",
+		"format": "prettier --write \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,yml,yaml}\"",
+		"format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,yml,yaml}\"",
+		"typecheck": "tsc --noEmit",
+		"pi:link-config": "bash scripts/link-agent-config.sh --apply"
+	},
+	"pi": {
+		"extensions": [
+			"./src/extensions/box-editor.ts",
+			"./src/extensions/notify.ts",
+			"./src/extensions/theme-hotkey.ts",
+			"./src/extensions/fast-mode.ts",
+			"./src/extensions/btw.ts",
+			"./src/extensions/cost-audit.ts",
+			"./src/extensions/copy-last-as-md.ts",
+			"./src/extensions/verify-command.ts",
+			"./src/extensions/guard.ts",
+			"./src/extensions/user-choice.ts",
+			"./src/extensions/memory.ts",
+			"./src/extensions/session-plan/index.ts",
+			"./src/extensions/goal-loop.ts",
+			"./src/extensions/subagent/index.ts",
+			"./src/extensions/workflow/index.ts",
+			"./src/extensions/workspace-id-guard.ts",
+			"./src/extensions/bash-orphan-cleanup.ts",
+			"./src/extensions/bash-output-compression.ts",
+			"./src/extensions/autoresearch-project-toggle.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-agent-core": "*",
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-agent-core": "0.78.0",
+		"@earendil-works/pi-ai": "0.78.0",
+		"@earendil-works/pi-coding-agent": "0.78.0",
+		"@earendil-works/pi-tui": "0.78.0",
+		"@types/node": "24.12.4",
+		"@types/turndown": "^5.0.5",
+		"prettier": "3.7.4",
+		"typebox": "1.1.38",
+		"typescript": "5.9.3"
+	}
 }
