@@ -14,7 +14,10 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
-import { installSlashCommandArgumentAutocomplete } from "./slash-command-autocomplete.js"
+import {
+	installSlashCommandArgumentAutocomplete,
+	slashCommandArgumentPrefix,
+} from "./slash-command-autocomplete.js"
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as net from "node:net"
@@ -181,6 +184,7 @@ type WidgetMode = (typeof WIDGET_MODES)[number]
 
 const COMS_TOP_LEVEL_COMPLETIONS: AutocompleteItem[] = [
 	{ value: "peers", label: "peers", description: "List peers" },
+	{ value: "list", label: "list", description: "Alias for peers" },
 	{ value: "inbox", label: "inbox", description: "Show inbox" },
 	{ value: "ask", label: "ask", description: "Send an ask to a peer" },
 	{ value: "send", label: "send", description: "Send a one-way message" },
@@ -195,9 +199,20 @@ const COMS_TOP_LEVEL_COMPLETIONS: AutocompleteItem[] = [
 		description: "Open the war-room dashboard overlay",
 	},
 	{
+		value: "dashboard",
+		label: "dashboard",
+		description: "Alias for dash",
+	},
+	{ value: "stats", label: "stats", description: "Alias for dash" },
+	{
 		value: "profile",
 		label: "profile",
 		description: "Show current dynamic profile/presence",
+	},
+	{
+		value: "identity",
+		label: "identity",
+		description: "Alias for profile",
 	},
 	{
 		value: "adopt",
@@ -226,6 +241,7 @@ const COMS_TOP_LEVEL_COMPLETIONS: AutocompleteItem[] = [
 		description: "Show or set widget mode",
 	},
 	{ value: "room", label: "room", description: "Show current room identity" },
+	{ value: "info", label: "info", description: "Alias for room" },
 	{
 		value: "refresh",
 		label: "refresh",
@@ -233,6 +249,21 @@ const COMS_TOP_LEVEL_COMPLETIONS: AutocompleteItem[] = [
 	},
 	{ value: "help", label: "help", description: "Show /coms usage" },
 ]
+
+const REASONING_LABEL_COMPLETIONS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+] as const
+const MODE_COMPLETIONS = [
+	...new Set([
+		...ROLE_LENS_NAMES.map((role) => ROLE_LENS_PRESETS[role].mode),
+		"blocked",
+	]),
+] as const
 
 const AUTO_COMPACT_PEER_THRESHOLD = 3
 const ACTIVE_SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const
@@ -1279,6 +1310,199 @@ function completeComsArguments(
 	return null
 }
 
+type ScopedCompletion = {
+	prefix: string
+	items: AutocompleteItem[]
+}
+
+function filterScopedCompletionItems(
+	prefix: string,
+	choices: AutocompleteItem[],
+): AutocompleteItem[] {
+	const normalized = prefix.toLowerCase()
+	return choices.filter((choice) =>
+		choice.value.toLowerCase().startsWith(normalized),
+	)
+}
+
+function simpleCompletionItems(
+	values: readonly string[],
+	describe?: (value: string) => string | undefined,
+	valueSuffix = "",
+): AutocompleteItem[] {
+	return values.map((value) => ({
+		value: `${value}${valueSuffix}`,
+		label: value,
+		description: describe?.(value),
+	}))
+}
+
+function scopedSingleArgumentCompletion(
+	tokens: string[],
+	trailingSpace: boolean,
+	choices: AutocompleteItem[],
+): ScopedCompletion | null {
+	if (tokens.length === 1 && trailingSpace)
+		return { prefix: "", items: choices }
+	if (tokens.length === 1 && !trailingSpace) {
+		const command = tokens[0] ?? ""
+		return {
+			prefix: command,
+			items: choices.map((item) => ({
+				...item,
+				value: `${command} ${item.value}`,
+			})),
+		}
+	}
+	if (tokens.length !== 2 || trailingSpace) return null
+	const prefix = tokens[1] ?? ""
+	const items = filterScopedCompletionItems(prefix, choices)
+	return items.length > 0 ? { prefix, items } : null
+}
+
+function scopedValueCompletion(
+	tokens: string[],
+	trailingSpace: boolean,
+	choices: AutocompleteItem[],
+): ScopedCompletion | null {
+	if (tokens.length === 2 && trailingSpace)
+		return { prefix: "", items: choices }
+	if (tokens.length !== 3 || trailingSpace) return null
+	const prefix = tokens[2] ?? ""
+	const items = filterScopedCompletionItems(prefix, choices)
+	return items.length > 0 ? { prefix, items } : null
+}
+
+function setFieldValueCompletionItems(
+	field: string,
+): AutocompleteItem[] | null {
+	switch (field) {
+		case "color":
+			return simpleCompletionItems(COLORS, (color) => `Use ${color}`)
+		case "mode":
+			return simpleCompletionItems(MODE_COMPLETIONS, (mode) =>
+				mode === "blocked" ? "Blocked/waiting" : `Set mode:${mode}`,
+			)
+		case "reasoning":
+			return simpleCompletionItems(REASONING_LABEL_COMPLETIONS, (level) =>
+				level === "off"
+					? "Advertise no reasoning label"
+					: `Advertise reasoning:${level}`,
+			)
+		case "purpose":
+			return simpleCompletionItems(
+				ROLE_LENS_NAMES.map((role) => ROLE_LENS_PRESETS[role].purpose),
+				(purpose) => `Use preset purpose: ${purpose}`,
+			)
+		case "status":
+			return simpleCompletionItems(
+				ROLE_LENS_NAMES.map((role) => ROLE_LENS_PRESETS[role].status),
+				(status) => `Use preset status: ${status}`,
+			)
+		default:
+			return null
+	}
+}
+
+function completeComsScopedArguments(
+	argumentPrefix: string,
+	peers: readonly CompletionPeer[],
+): ScopedCompletion | null {
+	const tokens = parseCommandArgs(argumentPrefix)
+	const trailingSpace = /\s$/.test(argumentPrefix)
+	const command = tokens[0]?.toLowerCase()
+	if (!command) return null
+
+	const canonical = canonicalComsCommand(command)
+	if (canonical === "widget") {
+		return scopedSingleArgumentCompletion(
+			tokens,
+			trailingSpace,
+			simpleCompletionItems(WIDGET_MODES, (mode) =>
+				mode === "auto"
+					? "Adaptive full/compact roster"
+					: `Set widget mode to ${mode}`,
+			),
+		)
+	}
+
+	if (canonical === "adopt") {
+		return scopedSingleArgumentCompletion(
+			tokens,
+			trailingSpace,
+			simpleCompletionItems(ROLE_LENS_NAMES, (role) => {
+				const preset = ROLE_LENS_PRESETS[role as RoleLens]
+				return `${preset.purpose} · mode:${preset.mode}`
+			}),
+		)
+	}
+
+	if (canonical === "set") {
+		const fieldCompletion = scopedSingleArgumentCompletion(
+			tokens,
+			trailingSpace,
+			simpleCompletionItems(
+				PROFILE_SET_FIELDS,
+				(field) =>
+					field === "color" ? "Hex color #RRGGBB" : `Set ${field}`,
+				" ",
+			),
+		)
+		if (fieldCompletion) return fieldCompletion
+
+		const field = tokens[1]?.toLowerCase()
+		const valueChoices = field ? setFieldValueCompletionItems(field) : null
+		return valueChoices
+			? scopedValueCompletion(tokens, trailingSpace, valueChoices)
+			: null
+	}
+
+	if (canonical === "clear") {
+		const selected = tokens.slice(1).map((token) => token.toLowerCase())
+		const completed = trailingSpace ? selected : selected.slice(0, -1)
+		const current = trailingSpace ? "" : (tokens[tokens.length - 1] ?? "")
+		const choices = simpleCompletionItems(
+			PROFILE_CLEAR_FIELDS.filter((field) => !completed.includes(field)),
+			(field) => `Clear ${field}`,
+		)
+		if (tokens.length === 1 && !trailingSpace) {
+			return {
+				prefix: command,
+				items: choices.map((item) => ({
+					...item,
+					value: `${command} ${item.value}`,
+				})),
+			}
+		}
+		const items = filterScopedCompletionItems(current, choices)
+		return items.length > 0 ? { prefix: current, items } : null
+	}
+
+	if (canonical === "ask" || canonical === "send") {
+		return scopedSingleArgumentCompletion(
+			tokens,
+			trailingSpace,
+			peerCompletionItems("", peers).map((item) => ({
+				...item,
+				value: item.value.trim(),
+			})),
+		)
+	}
+
+	if (canonical === "inbox") {
+		return scopedSingleArgumentCompletion(
+			tokens,
+			trailingSpace,
+			simpleCompletionItems(
+				["20", "50", "100"],
+				(limit) => `Show ${limit} messages`,
+			),
+		)
+	}
+
+	return null
+}
+
 function extractMessageText(message: unknown): string {
 	const m = message as { content?: unknown } | null
 	const content = m?.content
@@ -2159,6 +2383,59 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	const comsCommandItems = (prefix: string): AutocompleteItem[] | null =>
 		completeComsArguments(prefix, completionPeers())
+
+	function installComsScopedAutocomplete(ctx: ExtensionContext): void {
+		if (!ctx.hasUI) return
+		ctx.ui.addAutocompleteProvider((current) => ({
+			async getSuggestions(lines, cursorLine, cursorCol, options) {
+				const currentLine = lines[cursorLine] ?? ""
+				const argumentPrefix = slashCommandArgumentPrefix(
+					"coms",
+					currentLine.slice(0, cursorCol),
+				)
+				if (argumentPrefix === undefined)
+					return current.getSuggestions(
+						lines,
+						cursorLine,
+						cursorCol,
+						options,
+					)
+
+				const suggestions = completeComsScopedArguments(
+					argumentPrefix,
+					completionPeers(),
+				)
+				if (suggestions) return suggestions
+				return current.getSuggestions(lines, cursorLine, cursorCol, options)
+			},
+			applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+				return current.applyCompletion(
+					lines,
+					cursorLine,
+					cursorCol,
+					item,
+					prefix,
+				)
+			},
+			shouldTriggerFileCompletion(lines, cursorLine, cursorCol) {
+				const currentLine = lines[cursorLine] ?? ""
+				if (
+					slashCommandArgumentPrefix(
+						"coms",
+						currentLine.slice(0, cursorCol),
+					) !== undefined
+				)
+					return true
+				return (
+					current.shouldTriggerFileCompletion?.(
+						lines,
+						cursorLine,
+						cursorCol,
+					) ?? true
+				)
+			},
+		}))
+	}
 
 	function unreadCount(): number {
 		return inbox.filter((msg) => msg.unread).length
@@ -3345,6 +3622,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		installSlashCommandArgumentAutocomplete(ctx, "coms", comsCommandItems)
+		installComsScopedAutocomplete(ctx)
 		currentCtx = ctx
 		localAgentWorking = false
 		shuttingDown = false
