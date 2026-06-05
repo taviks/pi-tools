@@ -6,6 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent"
 import {
 	Box,
+	type AutocompleteItem,
 	type Component,
 	matchesKey,
 	Text,
@@ -13,6 +14,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
+import { installSlashCommandArgumentAutocomplete } from "./slash-command-autocomplete.js"
 import * as crypto from "node:crypto"
 import * as fs from "node:fs"
 import * as net from "node:net"
@@ -112,6 +114,17 @@ const PROFILE_CLEAR_FIELDS = [
 ] as const
 type ProfileClearField = (typeof PROFILE_CLEAR_FIELDS)[number]
 
+const PROFILE_SET_FIELDS = [
+	"name",
+	"purpose",
+	"scope",
+	"status",
+	"mode",
+	"reasoning",
+	"color",
+] as const
+type ProfileSetField = (typeof PROFILE_SET_FIELDS)[number]
+
 const ROLE_LENS_NAMES = [
 	"coordinator",
 	"scout",
@@ -165,6 +178,62 @@ const ROLE_LENS_PRESETS: Record<
 
 const WIDGET_MODES = ["auto", "compact", "full", "off"] as const
 type WidgetMode = (typeof WIDGET_MODES)[number]
+
+const COMS_TOP_LEVEL_COMPLETIONS: AutocompleteItem[] = [
+	{ value: "peers", label: "peers", description: "List peers" },
+	{ value: "inbox", label: "inbox", description: "Show inbox" },
+	{ value: "ask", label: "ask", description: "Send an ask to a peer" },
+	{ value: "send", label: "send", description: "Send a one-way message" },
+	{
+		value: "broadcast",
+		label: "broadcast",
+		description: "Send a one-way room message",
+	},
+	{
+		value: "dash",
+		label: "dash",
+		description: "Open the war-room dashboard overlay",
+	},
+	{
+		value: "profile",
+		label: "profile",
+		description: "Show current dynamic profile/presence",
+	},
+	{
+		value: "adopt",
+		label: "adopt",
+		description: "Adopt a standard role lens",
+	},
+	{ value: "idle", label: "idle", description: "Mark this seat idle" },
+	{
+		value: "set",
+		label: "set",
+		description: "Set a profile/presence field",
+	},
+	{
+		value: "status",
+		label: "status",
+		description: "Update or show current status",
+	},
+	{
+		value: "clear",
+		label: "clear",
+		description: "Clear profile/presence fields",
+	},
+	{
+		value: "widget",
+		label: "widget",
+		description: "Show or set widget mode",
+	},
+	{ value: "room", label: "room", description: "Show current room identity" },
+	{
+		value: "refresh",
+		label: "refresh",
+		description: "Refresh peer widget/dashboard data",
+	},
+	{ value: "help", label: "help", description: "Show /coms usage" },
+]
+
 const AUTO_COMPACT_PEER_THRESHOLD = 3
 const ACTIVE_SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const
 const ACTIVE_SPINNER_INTERVAL_MS = 180
@@ -1037,6 +1106,179 @@ function parseCommandArgs(input: string): string[] {
 	)
 }
 
+function filterCompletionItems(
+	argumentPrefix: string,
+	choices: AutocompleteItem[],
+): AutocompleteItem[] | null {
+	const normalized = argumentPrefix.trim().toLowerCase()
+	const items = choices.filter((choice) =>
+		choice.value.toLowerCase().startsWith(normalized),
+	)
+	return items.length > 0 ? items : null
+}
+
+function prefixedCompletionItems(
+	command: string,
+	values: readonly string[],
+	describe?: (value: string) => string | undefined,
+): AutocompleteItem[] {
+	return values.map((value) => ({
+		value: `${command} ${value}`,
+		label: value,
+		description: describe?.(value),
+	}))
+}
+
+function canonicalComsCommand(command: string): string {
+	switch (command) {
+		case "list":
+			return "peers"
+		case "dashboard":
+		case "stats":
+			return "dash"
+		case "identity":
+			return "profile"
+		case "info":
+			return "room"
+		default:
+			return command
+	}
+}
+
+type CompletionPeer = Pick<
+	RegistryEntry,
+	"session_id" | "name" | "model" | "purpose"
+> &
+	Pick<Partial<RegistryEntry>, "scope" | "status" | "mode" | "reasoning">
+
+function peerCompletionItems(
+	command: string,
+	peers: readonly CompletionPeer[],
+): AutocompleteItem[] {
+	const nameCounts = new Map<string, number>()
+	for (const peer of peers)
+		nameCounts.set(peer.name, (nameCounts.get(peer.name) ?? 0) + 1)
+	return [...peers]
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.map((peer) => {
+			const duplicateName = (nameCounts.get(peer.name) ?? 0) > 1
+			const target = duplicateName ? peer.session_id : peer.name
+			const role = presenceSummary(peer)
+			return {
+				value: `${command} ${target}`,
+				label: duplicateName
+					? `${peer.name} (${peer.session_id.slice(0, 8)})`
+					: peer.name,
+				description: [peer.model, role || undefined, peer.session_id]
+					.filter(Boolean)
+					.join(" · "),
+			}
+		})
+}
+
+function completeClearFields(
+	argumentPrefix: string,
+	command: string,
+	tokens: string[],
+	trailingSpace: boolean,
+): AutocompleteItem[] | null {
+	const selected = tokens.slice(1).map((token) => token.toLowerCase())
+	const completed = trailingSpace ? selected : selected.slice(0, -1)
+	const remaining = PROFILE_CLEAR_FIELDS.filter(
+		(field) => !completed.includes(field),
+	)
+	const base = [command, ...completed].join(" ")
+	return filterCompletionItems(
+		argumentPrefix,
+		remaining.map((field) => ({
+			value: `${base}${base ? " " : ""}${field}`,
+			label: field,
+			description: `Clear ${field}`,
+		})),
+	)
+}
+
+function completeComsArguments(
+	argumentPrefix: string,
+	peers: readonly CompletionPeer[],
+): AutocompleteItem[] | null {
+	const tokens = parseCommandArgs(argumentPrefix)
+	const trailingSpace = /\s$/.test(argumentPrefix)
+	const command = tokens[0]?.toLowerCase()
+	if (!command || (tokens.length === 1 && !trailingSpace)) {
+		return filterCompletionItems(argumentPrefix, COMS_TOP_LEVEL_COMPLETIONS)
+	}
+
+	const canonical = canonicalComsCommand(command)
+	if (canonical === "widget") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(command, WIDGET_MODES, (mode) =>
+					mode === "auto"
+						? "Adaptive full/compact roster"
+						: `Set widget mode to ${mode}`,
+				),
+			)
+		}
+		return null
+	}
+
+	if (canonical === "adopt") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(command, ROLE_LENS_NAMES, (role) => {
+					const preset = ROLE_LENS_PRESETS[role as RoleLens]
+					return `${preset.purpose} · mode:${preset.mode}`
+				}),
+			)
+		}
+		return null
+	}
+
+	if (canonical === "set") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(command, PROFILE_SET_FIELDS, (field) =>
+					field === "color" ? "Hex color #RRGGBB" : `Set ${field}`,
+				),
+			)
+		}
+		return null
+	}
+
+	if (canonical === "clear")
+		return completeClearFields(argumentPrefix, command, tokens, trailingSpace)
+
+	if (canonical === "ask" || canonical === "send") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				peerCompletionItems(command, peers),
+			)
+		}
+		return null
+	}
+
+	if (canonical === "inbox") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(
+					command,
+					["20", "50", "100"],
+					(limit) => `Show ${limit} messages`,
+				),
+			)
+		}
+		return null
+	}
+
+	return null
+}
+
 function extractMessageText(message: unknown): string {
 	const m = message as { content?: unknown } | null
 	const content = m?.content
@@ -1900,6 +2142,23 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	let widgetMode: WidgetMode = normalizeWidgetMode(
 		process.env.PI_AGENT_COMS_WIDGET,
 	)
+
+	function completionPeers(): CompletionPeer[] {
+		if (!identity) return []
+		const bySession = new Map<string, CompletionPeer>()
+		for (const peer of readRegistryEntries(identity.room)) {
+			if (peer.session_id !== identity.session_id)
+				bySession.set(peer.session_id, peer)
+		}
+		for (const peer of peerCache.values()) {
+			if (peer.session_id !== identity.session_id)
+				bySession.set(peer.session_id, peer)
+		}
+		return [...bySession.values()]
+	}
+
+	const comsCommandItems = (prefix: string): AutocompleteItem[] | null =>
+		completeComsArguments(prefix, completionPeers())
 
 	function unreadCount(): number {
 		return inbox.filter((msg) => msg.unread).length
@@ -3085,6 +3344,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	)
 
 	pi.on("session_start", async (_event, ctx) => {
+		installSlashCommandArgumentAutocomplete(ctx, "coms", comsCommandItems)
 		currentCtx = ctx
 		localAgentWorking = false
 		shuttingDown = false
@@ -3168,6 +3428,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	pi.registerCommand("coms", {
 		description:
 			"Room-based peer messaging between Pi agents. Usage: /coms [peers|inbox|ask|send|broadcast|dash|profile|adopt|idle|set|status|clear|widget|room|refresh]",
+		getArgumentCompletions: comsCommandItems,
 		handler: async (args, ctx) => {
 			currentCtx = ctx
 			const tokens = parseCommandArgs(args.trim())
@@ -3272,25 +3533,13 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 					return
 				}
 				if (command === "set") {
-					const field = tokens.shift() as
-						| keyof ConfigParamsType
-						| undefined
+					const field = tokens.shift() as ProfileSetField | undefined
 					const value = tokens.join(" ")
 					if (!field || !value)
 						throw new Error("/coms set requires <field> <value>")
-					if (
-						![
-							"name",
-							"purpose",
-							"scope",
-							"status",
-							"mode",
-							"reasoning",
-							"color",
-						].includes(field)
-					)
+					if (!(PROFILE_SET_FIELDS as readonly string[]).includes(field))
 						throw new Error(
-							"/coms set field must be one of: name, purpose, scope, status, mode, reasoning, color",
+							`/coms set field must be one of: ${PROFILE_SET_FIELDS.join(", ")}`,
 						)
 					const result = updateProfile({ [field]: value })
 					const warnings = result.warnings.length

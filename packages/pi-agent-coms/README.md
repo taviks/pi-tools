@@ -108,6 +108,8 @@ See `docs/fixed-seat-workflow.md` for the full workflow and when to prefer subag
 /coms refresh               refresh the peer widget/dashboard data
 ```
 
+Argument autocomplete is available for common subcommands and scoped options, e.g. `/coms widget <tab>` suggests `auto`, `compact`, `full`, and `off`; `/coms adopt <tab>` suggests role lenses.
+
 ## Agentic usage
 
 Agents should use presence updates as lightweight coordination hints:
