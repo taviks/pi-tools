@@ -9,7 +9,9 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent"
+import type { AutocompleteItem } from "@earendil-works/pi-tui"
 import { Type } from "typebox"
+import { installSlashCommandArgumentAutocomplete } from "./slash-command-autocomplete.js"
 
 const DEFAULT_REVIEW_INSTRUCTIONS =
 	"Review this implementation plan for correctness, risks, missing steps, sequencing issues, overengineering, and unclear assumptions. Be concrete and actionable."
@@ -32,6 +34,70 @@ const ARTIFACT_KINDS = [
 	"log",
 	"archive",
 ] as const
+const HANDOFF_COMMAND_COMPLETIONS: AutocompleteItem[] = [
+	{
+		value: "help",
+		label: "help",
+		description: "Show /handoff usage",
+	},
+	{
+		value: "init",
+		label: "init",
+		description: "Create handoff workspace directories",
+	},
+	{
+		value: "dir",
+		label: "dir",
+		description: "Show the handoff workspace directory",
+	},
+	{
+		value: "info",
+		label: "info",
+		description: "Show workspace id and handoff paths",
+	},
+	{
+		value: "list",
+		label: "list",
+		description: "List handoff artifacts",
+	},
+	{
+		value: "status",
+		label: "status",
+		description: "Alias for list",
+	},
+	{
+		value: "new",
+		label: "new",
+		description: "Create a task artifact",
+	},
+	{
+		value: "task",
+		label: "task",
+		description: "Alias for new",
+	},
+	{
+		value: "plan",
+		label: "plan",
+		description: "Create a plan artifact",
+	},
+	{
+		value: "decision",
+		label: "decision",
+		description: "Create a decision artifact",
+	},
+	{
+		value: "review-request",
+		label: "review-request",
+		description: "Create a review request for a plan",
+	},
+	{
+		value: "claude-review",
+		label: "claude-review",
+		description: "Run an external Claude Code review for a plan",
+	},
+]
+const CLAUDE_MODEL_COMPLETIONS = ["opus", "sonnet", "haiku"] as const
+const REVIEWER_COMPLETIONS = ["claude", "codex", "gemini"] as const
 type ArtifactKind = (typeof ARTIFACT_KINDS)[number]
 type NotifyKind = "info" | "warning" | "error"
 
@@ -149,6 +215,20 @@ function ensureWorkspaceId(root: string): string {
 function getWorkspaceInfo(cwd: string): WorkspaceInfo {
 	const workspaceRoot = resolveWorkspaceRoot(cwd)
 	const workspaceId = ensureWorkspaceId(workspaceRoot)
+	const handoffHome = getHandoffHome()
+	return {
+		workspaceRoot,
+		workspaceId,
+		workspaceIdFile: path.join(workspaceRoot, WORKSPACE_ID_RELATIVE_PATH),
+		handoffHome,
+		handoffDir: path.join(handoffHome, "workspaces", workspaceId),
+	}
+}
+
+function getExistingWorkspaceInfo(cwd: string): WorkspaceInfo | undefined {
+	const workspaceRoot = resolveWorkspaceRoot(cwd)
+	const workspaceId = readWorkspaceId(workspaceRoot)
+	if (!workspaceId) return undefined
 	const handoffHome = getHandoffHome()
 	return {
 		workspaceRoot,
@@ -555,10 +635,7 @@ function parseCommandArgs(input: string): {
 	flags: Map<string, string | boolean>
 	positionals: string[]
 } {
-	const tokens =
-		input
-			.match(/(?:"[^"]*"|'[^']*'|\S+)/g)
-			?.map((token) => token.replace(/^(["'])(.*)\1$/, "$2")) ?? []
+	const tokens = completionTokens(input)
 	const flags = new Map<string, string | boolean>()
 	const positionals: string[] = []
 	for (let i = 0; i < tokens.length; i++) {
@@ -574,6 +651,199 @@ function parseCommandArgs(input: string): {
 		positionals.push(token)
 	}
 	return { flags, positionals }
+}
+
+function completionTokens(input: string): string[] {
+	return (
+		input
+			.match(/(?:"[^"]*"|'[^']*'|\S+)/g)
+			?.map((token) => token.replace(/^(["'])(.*)\1$/, "$2")) ?? []
+	)
+}
+
+function filterCompletionItems(
+	argumentPrefix: string,
+	choices: AutocompleteItem[],
+): AutocompleteItem[] | null {
+	const normalized = argumentPrefix.trim().toLowerCase()
+	const items = choices.filter((choice) =>
+		choice.value.toLowerCase().startsWith(normalized),
+	)
+	return items.length > 0 ? items : null
+}
+
+function prefixedCompletionItems(
+	command: string,
+	values: readonly string[],
+	describe?: (value: string) => string | undefined,
+): AutocompleteItem[] {
+	return values.map((value) => ({
+		value: `${command} ${value}`,
+		label: value,
+		description: describe?.(value),
+	}))
+}
+
+function planCompletionItems(cwd: string, base: string): AutocompleteItem[] {
+	const info = getExistingWorkspaceInfo(cwd)
+	if (!info) return []
+	const seen = new Set<string>()
+	return listArtifacts(info, "plan").flatMap((item) => {
+		const slug = slugFromPlanPath(item.path)
+		if (seen.has(slug)) return []
+		seen.add(slug)
+		return [
+			{
+				value: `${base}${base ? " " : ""}${slug}`,
+				label: slug,
+				description: item.filename,
+			},
+		]
+	})
+}
+
+function completedPrefix(tokens: string[], trailingSpace: boolean): string {
+	return (trailingSpace ? tokens : tokens.slice(0, -1)).join(" ")
+}
+
+function firstClaudePlanIndex(tokens: string[]): number {
+	for (let i = 1; i < tokens.length; i++) {
+		const token = tokens[i]
+		if (token === "--yes" || token === "-y") continue
+		if (token === "--model") {
+			i += 1
+			continue
+		}
+		if (token.startsWith("-") && token !== "-") continue
+		return i
+	}
+	return -1
+}
+
+function completeClaudeReviewArguments(
+	argumentPrefix: string,
+	cwd: string,
+	tokens: string[],
+	trailingSpace: boolean,
+): AutocompleteItem[] | null {
+	const modelIndex = tokens.indexOf("--model")
+	if (
+		modelIndex >= 0 &&
+		((tokens.length === modelIndex + 1 && trailingSpace) ||
+			(tokens.length === modelIndex + 2 && !trailingSpace))
+	) {
+		const base = tokens.slice(0, modelIndex + 1).join(" ")
+		return filterCompletionItems(
+			argumentPrefix,
+			prefixedCompletionItems(base, CLAUDE_MODEL_COMPLETIONS, (model) =>
+				model === "opus" ? "Default Claude Code review model" : undefined,
+			),
+		)
+	}
+
+	if (!trailingSpace && tokens.at(-1)?.startsWith("-")) {
+		const completed = tokens.slice(0, -1)
+		const base = completed.join(" ")
+		return filterCompletionItems(argumentPrefix, [
+			{
+				value: `${base}${base ? " " : ""}--yes`,
+				label: "--yes",
+				description: "Skip interactive confirmation",
+			},
+			{
+				value: `${base}${base ? " " : ""}--model`,
+				label: "--model",
+				description: "Choose Claude Code model alias",
+			},
+		])
+	}
+
+	const planIndex = firstClaudePlanIndex(tokens)
+	if (planIndex < 0 || (!trailingSpace && planIndex === tokens.length - 1)) {
+		const base = completedPrefix(tokens, trailingSpace)
+		const plans = planCompletionItems(cwd, base)
+		const flags: AutocompleteItem[] = []
+		if (!tokens.includes("--yes") && !tokens.includes("-y"))
+			flags.push({
+				value: `${base}${base ? " " : ""}--yes`,
+				label: "--yes",
+				description: "Skip interactive confirmation",
+			})
+		if (!tokens.includes("--model"))
+			flags.push({
+				value: `${base}${base ? " " : ""}--model`,
+				label: "--model",
+				description: "Choose Claude Code model alias",
+			})
+		return filterCompletionItems(argumentPrefix, [...plans, ...flags])
+	}
+
+	return null
+}
+
+function completeHandoffArguments(
+	argumentPrefix: string,
+	cwd: string,
+): AutocompleteItem[] | null {
+	const tokens = completionTokens(argumentPrefix)
+	const trailingSpace = /\s$/.test(argumentPrefix)
+	const command = tokens[0]?.toLowerCase()
+	if (!command || (tokens.length === 1 && !trailingSpace))
+		return filterCompletionItems(argumentPrefix, HANDOFF_COMMAND_COMPLETIONS)
+
+	if (command === "list" || command === "status") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(
+					command,
+					ARTIFACT_KINDS,
+					(kind) => `List ${dirForKind(kind as ArtifactKind)} artifacts`,
+				),
+			)
+		}
+		return null
+	}
+
+	if (command === "review-request") {
+		if (tokens.length <= 1 || (tokens.length === 2 && !trailingSpace)) {
+			return filterCompletionItems(
+				argumentPrefix,
+				planCompletionItems(cwd, command),
+			)
+		}
+		if (tokens.length === 2 && trailingSpace) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(
+					`${command} ${tokens[1]}`,
+					REVIEWER_COMPLETIONS,
+					(reviewer) => `Reviewer id: ${reviewer}`,
+				),
+			)
+		}
+		if (tokens.length === 3 && !trailingSpace) {
+			return filterCompletionItems(
+				argumentPrefix,
+				prefixedCompletionItems(
+					`${command} ${tokens[1]}`,
+					REVIEWER_COMPLETIONS,
+					(reviewer) => `Reviewer id: ${reviewer}`,
+				),
+			)
+		}
+		return null
+	}
+
+	if (command === "claude-review")
+		return completeClaudeReviewArguments(
+			argumentPrefix,
+			cwd,
+			tokens,
+			trailingSpace,
+		)
+
+	return null
 }
 
 function usage(): string {
@@ -692,9 +962,21 @@ type HandoffParamsType = {
 }
 
 export default function agentHandoffExtension(pi: ExtensionAPI) {
+	let completionCwd = process.cwd()
+	const commandItems = (prefix: string) =>
+		completeHandoffArguments(prefix, completionCwd)
+
+	pi.on("session_start", (_event, ctx) => {
+		completionCwd = ctx.cwd
+		installSlashCommandArgumentAutocomplete(ctx, "handoff", (prefix) =>
+			completeHandoffArguments(prefix, ctx.cwd),
+		)
+	})
+
 	pi.registerCommand("handoff", {
 		description:
 			"Manage cross-harness agent handoff artifacts. Usage: /handoff [init|dir|info|list|new|plan|decision|review-request|claude-review]",
+		getArgumentCompletions: commandItems,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const info = getWorkspaceInfo(ctx.cwd)
 			const { flags, positionals } = parseCommandArgs(args.trim())

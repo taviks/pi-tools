@@ -24,6 +24,8 @@ The workspace ID is read from the same `.pi/workspace-id` convention used by `pi
 /handoff claude-review [--yes] [--model opus] <slug-or-plan> [instructions...]
 ```
 
+Argument autocomplete is available for common subcommands and scoped arguments, including artifact kinds for `/handoff list`, existing plan artifacts for review commands, reviewer ids, and Claude review flags/models.
+
 ## LLM tool
 
 Registers one tool: `handoff`.

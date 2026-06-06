@@ -86,6 +86,9 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: '*'
         version: 0.78.0(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-tui':
+        specifier: '*'
+        version: 0.78.0
       typebox:
         specifier: '*'
         version: 1.1.38
