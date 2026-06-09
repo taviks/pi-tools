@@ -23,6 +23,7 @@ Installed from Pi's official `examples/extensions/subagent` and customized for l
   - per-agent instance labels (`worker1`, `worker2`, …)
   - per-agent busy/status indicators (queued/running/done/failed/cancelled)
   - progress bars and elapsed time
+  - low-motion row indicators: only the widget header/footer animate while per-job/per-agent rows stay stable to avoid flicker
 - Agent discovery from:
   - bundled `agents/*.md` defaults (user scope)
   - optional `~/.pi/agent/agents/*.md` user overrides

@@ -52,7 +52,7 @@ pnpm -s typecheck
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, working indicator polish, fast mode, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 Goal loop can be started explicitly with `/goal <objective>`. It also auto-starts from a `Goal:`/`goal:` prompt header when no goal is already active; if the header has no same-line text, the next non-empty line block is used as the objective.
 

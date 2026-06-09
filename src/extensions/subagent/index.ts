@@ -25,7 +25,14 @@ import {
 	type ExtensionContext,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent"
-import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui"
+import {
+	Container,
+	Markdown,
+	Spacer,
+	Text,
+	type Component,
+	type TUI,
+} from "@earendil-works/pi-tui"
 import { Type } from "typebox"
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js"
 import {
@@ -50,6 +57,7 @@ const DEFAULT_WIDGET_AGENT_LIMIT = 4
 const MAX_WIDGET_AGENT_LIMIT = 99
 const MAX_WIDGET_TYPE_LINES = 5
 const WIDGET_SPINNER_INTERVAL_MS = 400
+const WIDGET_RUNNING_ICON = "●"
 const SUBAGENT_WIDGET_KEY = "subagent-jobs"
 const SUBAGENT_STATUS_KEY = "subagent-jobs"
 const PROJECT_AGENT_TRUST_ENV_KEY = "PI_SUBAGENT_TRUST_PROJECT_AGENTS"
@@ -883,12 +891,8 @@ function statusIcon(status: BackgroundJobStatus): string {
 	}
 }
 
-function statusIconAnimated(
-	status: BackgroundJobStatus,
-	spinnerTick: number,
-): string {
-	if (status === "running")
-		return SPINNER_FRAMES[spinnerTick % SPINNER_FRAMES.length]
+function statusIconForWidgetRow(status: BackgroundJobStatus): string {
+	if (status === "running") return WIDGET_RUNNING_ICON
 	return statusIcon(status)
 }
 
@@ -936,6 +940,11 @@ function runStateLabel(state: SubagentRunState): string {
 		default:
 			return state
 	}
+}
+
+function resultStateIconForWidgetRow(state: SubagentRunState): string {
+	if (state === "running") return WIDGET_RUNNING_ICON
+	return resultStateIcon(state, 0)
 }
 
 function formatRouteMeta(result: SingleResult): string {
@@ -1279,7 +1288,6 @@ function renderBackgroundWidgetByJobText(
 		fg: (color: any, text: string) => string
 		bold: (text: string) => string
 	},
-	spinnerTick: number,
 	density: WidgetDensity,
 	agentLimit: WidgetAgentLimit,
 ): string {
@@ -1315,10 +1323,7 @@ function renderBackgroundWidgetByJobText(
 		lines.push(
 			theme.fg("muted", jobBranch) +
 				" " +
-				theme.fg(
-					jobStateColor,
-					statusIconAnimated(job.status, spinnerTick + jobIndex),
-				) +
+				theme.fg(jobStateColor, statusIconForWidgetRow(job.status)) +
 				" " +
 				theme.fg("toolTitle", shortJobId(job.id)) +
 				theme.fg("dim", label) +
@@ -1349,7 +1354,7 @@ function renderBackgroundWidgetByJobText(
 			const branchPrefix = isLastJob ? "   " : "│  "
 			const agentBranch = !isTruncated && isLastShownAgent ? "└─" : "├─"
 			const detailPrefix = `${branchPrefix}${agentBranch === "└─" ? "   " : "│  "}`
-			const icon = resultStateIcon(runState, spinnerTick + i + jobIndex)
+			const icon = resultStateIconForWidgetRow(runState)
 			const stateColor =
 				runState === "completed"
 					? "success"
@@ -1427,7 +1432,6 @@ function renderBackgroundWidgetByAgentTypeText(
 		fg: (color: any, text: string) => string
 		bold: (text: string) => string
 	},
-	spinnerTick: number,
 	density: WidgetDensity,
 	agentLimit: WidgetAgentLimit,
 ): string {
@@ -1499,7 +1503,7 @@ function renderBackgroundWidgetByAgentTypeText(
 		const branch = isLastGroup ? "└─" : "├─"
 		const icon =
 			group.counts.running > 0
-				? SPINNER_FRAMES[(spinnerTick + groupIndex) % SPINNER_FRAMES.length]
+				? WIDGET_RUNNING_ICON
 				: group.counts.failed > 0
 					? "✗"
 					: group.counts.cancelled > 0
@@ -1543,10 +1547,7 @@ function renderBackgroundWidgetByAgentTypeText(
 		for (let i = 0; i < shownItems.length; i++) {
 			const item = shownItems[i]
 			const runState = getResultRunState(item.result)
-			const itemStateIcon = resultStateIcon(
-				runState,
-				spinnerTick + groupIndex + i,
-			)
+			const itemStateIcon = resultStateIconForWidgetRow(runState)
 			const stateColor =
 				runState === "completed"
 					? "success"
@@ -1650,7 +1651,6 @@ function renderBackgroundWidgetText(
 		const body = renderBackgroundWidgetByAgentTypeText(
 			jobs,
 			theme,
-			spinnerTick,
 			density,
 			agentLimit,
 		)
@@ -1660,12 +1660,33 @@ function renderBackgroundWidgetText(
 	const body = renderBackgroundWidgetByJobText(
 		jobs,
 		theme,
-		spinnerTick,
 		density,
 		agentLimit,
 	)
 	if (body) lines.push(body)
 	return lines.join("\n")
+}
+
+class DynamicTextWidget implements Component {
+	private readonly text = new Text("", 0, 0)
+	private renderedText: string | undefined
+
+	constructor(private readonly getText: () => string) {}
+
+	render(width: number): string[] {
+		const text = this.getText()
+		if (!text) return []
+		if (text !== this.renderedText) {
+			this.text.setText(text)
+			this.renderedText = text
+		}
+		return this.text.render(width)
+	}
+
+	invalidate(): void {
+		this.renderedText = undefined
+		this.text.invalidate()
+	}
 }
 
 function renderJobsText(jobs: BackgroundJob[]): string {
@@ -2386,6 +2407,11 @@ export default function (pi: ExtensionAPI) {
 	let widgetDensity: WidgetDensity = "detailed"
 	let widgetGrouping: WidgetGrouping = "job"
 	let widgetAgentLimit: WidgetAgentLimit = DEFAULT_WIDGET_AGENT_LIMIT
+	let backgroundWidgetContext: ExtensionContext | undefined
+	let backgroundWidgetTui: TUI | undefined
+	let backgroundWidgetInstalled = false
+	let lastStatusContext: ExtensionContext | undefined
+	let lastStatusText: string | undefined
 
 	const getBackgroundJobs = () => Array.from(backgroundJobs.values())
 	const getWidgetConfigText = () =>
@@ -2431,6 +2457,38 @@ export default function (pi: ExtensionAPI) {
 		widgetTicker = undefined
 	}
 
+	const resetBackgroundWidgetState = () => {
+		backgroundWidgetContext = undefined
+		backgroundWidgetTui = undefined
+		backgroundWidgetInstalled = false
+		lastStatusContext = undefined
+		lastStatusText = undefined
+	}
+
+	const ensureBackgroundWidget = (target: ExtensionContext) => {
+		if (backgroundWidgetInstalled && backgroundWidgetContext === target)
+			return
+		backgroundWidgetContext = target
+		backgroundWidgetInstalled = true
+		target.ui.setWidget(
+			SUBAGENT_WIDGET_KEY,
+			(tui) => {
+				backgroundWidgetTui = tui
+				return new DynamicTextWidget(() =>
+					renderBackgroundWidgetText(
+						getBackgroundJobs(),
+						target.ui.theme,
+						widgetSpinnerTick,
+						widgetDensity,
+						widgetGrouping,
+						widgetAgentLimit,
+					),
+				)
+			},
+			{ placement: "belowEditor" },
+		)
+	}
+
 	const ensureWidgetTicker = () => {
 		if (widgetTicker) return
 		widgetTicker = setInterval(() => {
@@ -2448,6 +2506,7 @@ export default function (pi: ExtensionAPI) {
 			stopWidgetTicker()
 			target.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined)
 			target.ui.setStatus(SUBAGENT_STATUS_KEY, undefined)
+			resetBackgroundWidgetState()
 			return
 		}
 
@@ -2458,23 +2517,7 @@ export default function (pi: ExtensionAPI) {
 		if (running > 0) ensureWidgetTicker()
 		else stopWidgetTicker()
 
-		target.ui.setWidget(
-			SUBAGENT_WIDGET_KEY,
-			(_tui, theme) =>
-				new Text(
-					renderBackgroundWidgetText(
-						jobs,
-						theme,
-						widgetSpinnerTick,
-						widgetDensity,
-						widgetGrouping,
-						widgetAgentLimit,
-					),
-					0,
-					0,
-				),
-			{ placement: "belowEditor" },
-		)
+		ensureBackgroundWidget(target)
 
 		const statusIcon =
 			running > 0
@@ -2491,7 +2534,13 @@ export default function (pi: ExtensionAPI) {
 				"dim",
 				`subagents: ${running} running · ${queued} queued${failed > 0 ? ` · ${failed} failed` : ""} · ${widgetGrouping}/${widgetDensity} · agents=${formatWidgetAgentLimit(widgetAgentLimit)}`,
 			)
-		target.ui.setStatus(SUBAGENT_STATUS_KEY, statusText)
+		if (lastStatusContext !== target || lastStatusText !== statusText) {
+			lastStatusContext = target
+			lastStatusText = statusText
+			target.ui.setStatus(SUBAGENT_STATUS_KEY, statusText)
+		} else {
+			backgroundWidgetTui?.requestRender()
+		}
 	}
 
 	const pruneBackgroundJobs = () => {
@@ -2856,6 +2905,7 @@ export default function (pi: ExtensionAPI) {
 		if (!ctx.hasUI) return
 		ctx.ui.setWidget(SUBAGENT_WIDGET_KEY, undefined)
 		ctx.ui.setStatus(SUBAGENT_STATUS_KEY, undefined)
+		resetBackgroundWidgetState()
 	})
 
 	pi.registerTool({

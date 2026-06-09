@@ -27,6 +27,7 @@
 			"./src/extensions/box-editor.ts",
 			"./src/extensions/notify.ts",
 			"./src/extensions/theme-hotkey.ts",
+			"./src/extensions/working-indicator.ts",
 			"./src/extensions/fast-mode.ts",
 			"./src/extensions/btw.ts",
 			"./src/extensions/cost-audit.ts",
