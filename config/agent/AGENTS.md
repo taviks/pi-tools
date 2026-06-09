@@ -3,6 +3,7 @@
 - Default to OpenAI models unless the user explicitly requests another provider.
 - Default interactive sessions should use `openai-codex/gpt-5.5` with high reasoning; reserve `xhigh` for explicitly hard architecture/debugging/review work.
 - Start with targeted discovery (`rg`, `find`, `git diff`, or focused `bash`) before reading files. Prefer `read` with `offset`/`limit` for large files and avoid repeated large reads.
+- For Git/worktree state, use the `git-agent-hygiene` skill when status/diff/staging/commit safety matters. Prefer `git status --short --branch --untracked-files=all`; remember `git diff` omits untracked files and `git diff --cached` is needed for staged changes.
 - Keep shell output small. For noisy commands, redirect full logs to `/tmp` and print concise summaries/tails/errors.
 - For quiet success/failure checks, prefer:
   `command >/tmp/task-name.log 2>&1 || { echo "command failed"; tail -80 /tmp/task-name.log; exit 1; }; echo "command succeeded"`
