@@ -23,10 +23,14 @@
 		"pi:link-config": "bash scripts/link-agent-config.sh --apply"
 	},
 	"pi": {
+		"themes": [
+			"./themes"
+		],
 		"extensions": [
 			"./src/extensions/box-editor.ts",
 			"./src/extensions/notify.ts",
 			"./src/extensions/theme-hotkey.ts",
+			"./src/extensions/system-theme.ts",
 			"./src/extensions/working-indicator.ts",
 			"./src/extensions/fast-mode.ts",
 			"./src/extensions/btw.ts",

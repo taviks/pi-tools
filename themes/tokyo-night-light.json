@@ -1,0 +1,83 @@
+{
+	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+	"name": "tokyo-night-light",
+	"vars": {
+		"blue": "#2e7de9",
+		"cyan": "#007197",
+		"magenta": "#9854f1",
+		"green": "#587539",
+		"red": "#c64343",
+		"orange": "#b15c00",
+		"yellow": "#8c6c3e",
+		"teal": "#118c74",
+		"comment": "#7d86a8",
+		"fg": "#1f2335",
+		"fg2": "#4f587a",
+		"fg3": "#68708f",
+		"border1": "#c5c9d8"
+	},
+	"colors": {
+		"accent": "blue",
+		"border": "blue",
+		"borderAccent": "cyan",
+		"borderMuted": "border1",
+		"success": "green",
+		"error": "red",
+		"warning": "orange",
+		"muted": "fg3",
+		"dim": "comment",
+		"text": "fg",
+		"thinkingText": "fg3",
+
+		"selectedBg": "#dde4f4",
+		"userMessageBg": "#e9edf7",
+		"userMessageText": "fg",
+		"customMessageBg": "#ede8f7",
+		"customMessageText": "fg",
+		"customMessageLabel": "magenta",
+		"toolPendingBg": "#e7ecf7",
+		"toolSuccessBg": "#e8f0e4",
+		"toolErrorBg": "#f5e5e9",
+		"toolTitle": "fg",
+		"toolOutput": "fg3",
+
+		"mdHeading": "yellow",
+		"mdLink": "cyan",
+		"mdLinkUrl": "comment",
+		"mdCode": "teal",
+		"mdCodeBlock": "fg2",
+		"mdCodeBlockBorder": "comment",
+		"mdQuote": "fg3",
+		"mdQuoteBorder": "comment",
+		"mdHr": "comment",
+		"mdListBullet": "blue",
+
+		"toolDiffAdded": "green",
+		"toolDiffRemoved": "red",
+		"toolDiffContext": "fg3",
+
+		"syntaxComment": "comment",
+		"syntaxKeyword": "magenta",
+		"syntaxFunction": "blue",
+		"syntaxVariable": "cyan",
+		"syntaxString": "green",
+		"syntaxNumber": "orange",
+		"syntaxType": "teal",
+		"syntaxOperator": "fg2",
+		"syntaxPunctuation": "fg3",
+
+		"thinkingOff": "border1",
+		"thinkingMinimal": "comment",
+		"thinkingLow": "#6675b8",
+		"thinkingMedium": "blue",
+		"thinkingHigh": "magenta",
+		"thinkingXhigh": "red",
+
+		"bashMode": "orange"
+	},
+	"export": {
+		"pageBg": "#f6f8ff",
+		"cardBg": "#ffffff",
+		"infoBg": "#f2ebff"
+	}
+}
