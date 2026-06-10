@@ -13,6 +13,7 @@ Installed from Pi's official `examples/extensions/subagent` and customized for l
   - agent-type model hierarchy defaults (`openai-codex/gpt-5.5` across coordinator/planner/worker/reviewer/scout unless explicitly overridden)
   - agent/category thinking defaults (`scout=low`, `worker=medium`, `planner=high`, `reviewer=xhigh`, `coordinator=medium`; visual/design categories use `high`)
 - optional fallback chain via `fallbackModels` (single/per-task/per-step, prefer OpenAI-only fallbacks)
+- built-in fallback candidates are filtered against the live model registry; unavailable built-ins are skipped quietly, while unavailable explicit model/fallback requests are reported
 - retry-on-retryable-failure with model cooldown before fallback reuse
 - execution concurrency caps per provider/model for safer parallel load
 - inherited `/fast` state for spawned GPT-5.5/GPT-5.4 subagent processes (passes the OpenAI priority service tier env through explicitly)

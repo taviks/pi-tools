@@ -13,7 +13,6 @@
 		"openai-codex/gpt-5.5",
 		"openai-codex/gpt-5.4",
 		"openai-codex/gpt-5.4-mini",
-		"openai-codex/gpt-5.3-codex",
 		"deepseek/deepseek-v4-pro",
 		"deepseek/deepseek-v4-flash",
 		"openai-codex/gpt-5.3-codex-spark"

@@ -496,8 +496,14 @@ function resolveRunModelPlan(
 		normalizeModelId(hierarchy.primaryModel) ??
 		normalizeModelId(categoryConfig?.model)
 
+	const explicitFallbackModels = normalizeModelList(fallbackModels)
+	const reportableRequestedModels = normalizeModelList([
+		...(parsedModelOverride.model ? [parsedModelOverride.model] : []),
+		...explicitFallbackModels,
+		...(agentDefaultModel ? [agentDefaultModel] : []),
+	])
 	const mergedFallbacks = normalizeModelList([
-		...(fallbackModels ?? []),
+		...explicitFallbackModels,
 		...(categoryConfig?.fallbackModels ?? []),
 		...(hierarchy.fallbackModels ?? []),
 		...(agentDefaultModel ? [agentDefaultModel] : []),
@@ -511,12 +517,14 @@ function resolveRunModelPlan(
 		...(primaryModel ? [primaryModel] : []),
 		...mergedFallbacks,
 	])
+	const reportableRequestedModelSet = new Set(reportableRequestedModels)
+	const isAvailableModel = (model: string) =>
+		availableModelIds.has(splitModelThinking(model).model ?? "")
 	const missingCandidates = requestedCandidates.filter(
-		(model) => !availableModelIds.has(splitModelThinking(model).model ?? ""),
+		(model) =>
+			reportableRequestedModelSet.has(model) && !isAvailableModel(model),
 	)
-	const modelCandidates = requestedCandidates.filter((model) =>
-		availableModelIds.has(splitModelThinking(model).model ?? ""),
-	)
+	const modelCandidates = requestedCandidates.filter(isAvailableModel)
 	if (!primaryModel || !availableModelIds.has(primaryModel)) {
 		primaryModel = modelCandidates[0]
 	}
