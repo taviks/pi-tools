@@ -33,6 +33,7 @@
 			"./src/extensions/system-theme.ts",
 			"./src/extensions/working-indicator.ts",
 			"./src/extensions/fast-mode.ts",
+			"./src/extensions/effort.ts",
 			"./src/extensions/btw.ts",
 			"./src/extensions/cost-audit.ts",
 			"./src/extensions/copy-last-as-md.ts",
