@@ -87,6 +87,14 @@ the subagent runner for model routing, fallbacks, and usage tracking.
   `PI_FUSION_EXCLUDE` (comma-separated substrings).
 - **Thinking level.** Panelists and judge default to `high` (Fusion is for hard
   problems). Override per call with `thinkingLevel`, or per panelist/judge.
+- **Effectiveness insight.** The judge rates each panelist's contribution
+  (`decisive`/`contributing`/`redundant`) and states whether deliberation
+  changed the answer or merely confirmed it (a "Panel value-add" section). A
+  mechanical participation ledger (web/repo tool calls, output size, cost per
+  panelist) is shown in the result and `details`. Pass `baseline: true` to also
+  run one strong model solo on the raw prompt (no panel/scout) and have the
+  judge compare deliberated-vs-solo — the honest test of whether the panel was
+  worth it (costs one extra model call).
 - The judge is blinded to panelist model identities by default (Panelist A/B/C)
   to reduce brand bias; pass `blindJudge: false` to disable.
 - **Web search** is allowed by default; pass `web: false` to forbid it. Requires

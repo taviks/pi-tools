@@ -48,3 +48,19 @@ including your own concerns.
 ## Final answer
 The synthesized, decision-ready answer to the original prompt. Be explicit about
 remaining uncertainty and confidence. This section should stand on its own.
+
+## Panel value-add
+Rate each panelist's contribution to YOUR final answer as one of `decisive`
+(provided something the answer depends on), `contributing` (helpful but not
+pivotal), or `redundant` (added nothing others didn't). One line each, by label,
+saying what it uniquely added or why it was redundant. Then state plainly:
+did the deliberation change the answer versus what a typical/median panelist
+said, or did it merely confirm it? Be honest — if the panel mostly agreed and a
+single model would likely have sufficed, say so.
+
+## Deliberation vs single-model baseline
+Include this section ONLY if a "Single-model baseline" was provided above.
+Compare your deliberated final answer to that solo baseline: what does the
+deliberation add, correct, or de-risk that the baseline missed? Is it materially
+better, and was the extra cost of the panel justified? If the baseline was
+already as good, say so plainly.

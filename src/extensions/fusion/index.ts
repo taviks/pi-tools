@@ -129,10 +129,24 @@ interface FusionInput {
 	judge?: JudgeInput
 	web?: boolean
 	scout?: boolean
+	baseline?: boolean
 	blindJudge?: boolean
 	panelSize?: number
 	thinkingLevel?: ThinkingLevel
 	timeoutSeconds?: number
+}
+
+/** Mechanical participation ledger for one panelist (or the baseline). */
+interface PanelLedger {
+	tag: string
+	model?: string
+	status: SubagentRunState | "queued"
+	toolCounts: Record<string, number>
+	usedWeb: boolean
+	usedRepo: boolean
+	outputChars: number
+	cost: number
+	turns: number
 }
 
 interface ResolvedMember {
@@ -154,13 +168,17 @@ interface FusionDetails {
 	web: boolean
 	blindJudge: boolean
 	scoutEnabled: boolean
+	baselineEnabled: boolean
 	phase: "scout" | "panel" | "judge" | "done" | "failed" | "cancelled"
 	scout?: MemberSnapshot
+	baseline?: MemberSnapshot
 	panel: MemberSnapshot[]
 	judge: MemberSnapshot
 	usage: UsageStats
 	diversityNote?: string
 	finalAnswer?: string
+	baselineOutput?: string
+	ledger: PanelLedger[]
 	logs: string[]
 	panelistOutputs: Array<{ label: string; model?: string; output: string }>
 }
@@ -200,6 +218,12 @@ const FusionParams = Type.Object({
 		Type.Boolean({
 			description:
 				"Force the code-context scout pre-pass on/off. Default: auto (runs when the working dir is a code repo and self-gates on relevance).",
+		}),
+	),
+	baseline: Type.Optional(
+		Type.Boolean({
+			description:
+				"Also run one strong model solo on the raw prompt (no panel/scout) and have the judge compare the deliberated answer against it, to measure whether the deliberation was worth it. Default false; adds one model call.",
 		}),
 	),
 	blindJudge: Type.Optional(
@@ -571,6 +595,61 @@ function makeSubagentDetails(): (results: SingleResult[]) => SubagentDetails {
 	})
 }
 
+const REPO_TOOL_NAMES = ["read", "grep", "find", "ls", "bash"]
+
+/** Count tool calls by name across a subagent's assistant messages. */
+function toolCounts(result: SingleResult): Record<string, number> {
+	const counts: Record<string, number> = {}
+	for (const msg of result.messages) {
+		if (msg.role !== "assistant") continue
+		for (const part of msg.content as Array<{
+			type?: string
+			name?: string
+		}>) {
+			if (part?.type === "toolCall" && typeof part.name === "string")
+				counts[part.name] = (counts[part.name] ?? 0) + 1
+		}
+	}
+	return counts
+}
+
+function buildLedger(
+	tag: string,
+	model: string | undefined,
+	result: SingleResult,
+): PanelLedger {
+	const counts = toolCounts(result)
+	return {
+		tag,
+		model,
+		status: getResultRunState(result),
+		toolCounts: counts,
+		usedWeb: (counts["web_search"] ?? 0) > 0,
+		usedRepo: REPO_TOOL_NAMES.some((t) => (counts[t] ?? 0) > 0),
+		outputChars: (getFinalOutput(result.messages) || "").length,
+		cost: result.usage.cost || 0,
+		turns: result.usage.turns || 0,
+	}
+}
+
+function formatLedger(ledger: PanelLedger[]): string {
+	if (ledger.length === 0) return ""
+	const lines = ledger.map((l) => {
+		const repoCalls = REPO_TOOL_NAMES.reduce(
+			(n, t) => n + (l.toolCounts[t] ?? 0),
+			0,
+		)
+		const bits = [
+			l.usedWeb ? `web:${l.toolCounts["web_search"]}` : undefined,
+			repoCalls > 0 ? `repo:${repoCalls}` : undefined,
+			`↓${formatTokens(l.outputChars)}c`,
+			l.cost ? `$${l.cost.toFixed(4)}` : undefined,
+		].filter((b): b is string => b !== undefined)
+		return `  ${statusIcon(l.status)} ${l.tag} ${l.model ?? "default"} · ${bits.join(" ")}`
+	})
+	return ["Panel ledger:", ...lines].join("\n")
+}
+
 function scoutTask(prompt: string): string {
 	return [
 		"You are grounding a multi-model deliberation that may or may not be about this codebase.",
@@ -620,6 +699,7 @@ function buildJudgePacket(
 	outputs: string[],
 	blind: boolean,
 	contextBundle: string | undefined,
+	baselineOutput: string | undefined,
 ): string {
 	const blocks = members.map((member, i) => {
 		const heading = blind
@@ -639,12 +719,21 @@ function buildJudgePacket(
 			"",
 		)
 	}
+	parts.push("# Panelist analyses", blocks.join("\n\n"), "")
+	if (baselineOutput) {
+		parts.push(
+			"# Single-model baseline (one model, no deliberation)",
+			"This is what a single model produced solo, for comparison only. It is NOT a panelist.",
+			"",
+			baselineOutput,
+			"",
+		)
+	}
 	parts.push(
-		"# Panelist analyses",
-		blocks.join("\n\n"),
-		"",
 		"# Your task",
-		"Synthesize the panelist analyses using your required output format (Consensus, Contradictions, Partial coverage, Unique insights, Blind spots, Final answer). Attribute claims to panelist labels.",
+		"Synthesize the panelist analyses using your required output format (Consensus, Contradictions, Partial coverage, Unique insights, Blind spots, Final answer, Panel value-add" +
+			(baselineOutput ? ", Deliberation vs single-model baseline" : "") +
+			"). Attribute claims to panelist labels.",
 	)
 	return truncateBytes(
 		parts.join("\n"),
@@ -695,6 +784,12 @@ function renderFusionText(details: FusionDetails): string {
 			`  ${statusIcon(s.status)} scout${s.model ? ` (${s.model})` : ""}${s.outputPreview ? ` — ${s.outputPreview}` : ""}`,
 		)
 	}
+	if (details.baseline) {
+		const b = details.baseline
+		lines.push(
+			`  ${statusIcon(b.status)} baseline${b.model ? ` (${b.model})` : ""}${b.outputPreview ? ` — ${b.outputPreview}` : ""}`,
+		)
+	}
 	for (const m of details.panel) {
 		const route = m.model ? ` (${m.model})` : ""
 		const note = m.error
@@ -727,9 +822,12 @@ function summarize(details: FusionDetails): string {
 	]
 		.filter((l): l is string => l !== undefined)
 		.join("\n")
+	const ledger = formatLedger(details.ledger)
 	const answer = details.finalAnswer || "(no synthesized answer)"
 	return truncateBytes(
-		`${header}\n\n${answer}`,
+		[header, ledger || undefined, answer]
+			.filter((s): s is string => Boolean(s))
+			.join("\n\n"),
 		TOOL_OUTPUT_CAP_BYTES,
 		"[Fusion output truncated. Full outputs are preserved in tool details.]",
 	)
@@ -753,6 +851,8 @@ async function runFusion(
 	panel: ResolvedMember[],
 	judge: ResolvedMember,
 	scoutEnabled: boolean,
+	baselineEnabled: boolean,
+	baselineMember: ResolvedMember,
 	web: boolean,
 	ctx: ExtensionContext,
 	signal: AbortSignal | undefined,
@@ -773,8 +873,12 @@ async function runFusion(
 		web,
 		blindJudge,
 		scoutEnabled,
+		baselineEnabled,
 		phase: scoutEnabled ? "scout" : "panel",
 		scout: scoutEnabled ? { label: "scout", status: "queued" } : undefined,
+		baseline: baselineEnabled
+			? { label: "baseline", model: baselineMember.model, status: "queued" }
+			: undefined,
 		panel: panel.map((m) => ({
 			label: m.label,
 			model: m.model,
@@ -783,6 +887,7 @@ async function runFusion(
 		judge: { label: "judge", model: judge.model, status: "queued" },
 		usage: emptyUsage(),
 		diversityNote: diversityNote(panel),
+		ledger: [],
 		logs: [],
 		panelistOutputs: [],
 	}
@@ -860,10 +965,47 @@ async function runFusion(
 
 		const task = panelistTask(input.prompt, web, contextBundle)
 
-		const panelResults = await mapWithConcurrencyLimit(
-			panel,
-			panel.length,
-			async (member, index) => {
+		// Optional single-model baseline (no scout grounding) runs concurrently
+		// with the panel so the judge can compare deliberated vs solo.
+		const runBaseline = async (): Promise<SingleResult | undefined> => {
+			if (!baselineEnabled || !details.baseline) return undefined
+			const snap = details.baseline
+			snap.status = "running"
+			emit()
+			const update: OnUpdateCallback = (partial) => {
+				const r = partial.details?.results[0]
+				if (r && details.baseline) {
+					details.baseline.status = getResultRunState(r)
+					details.baseline.outputPreview = preview(resultText(r))
+				}
+				emit()
+			}
+			const result = await runSingleAgent(
+				ctx.cwd,
+				agents,
+				PANELIST_AGENT,
+				panelistTask(input.prompt, web, undefined),
+				undefined,
+				0,
+				runSignal.signal,
+				update,
+				subagentDetails,
+				baselineMember.model,
+				baselineMember.thinkingLevel,
+				undefined,
+				undefined,
+				ctx,
+			)
+			snap.status = getResultRunState(result)
+			snap.outputPreview = preview(resultText(result))
+			if (snap.status !== "completed") snap.error = resultErrorText(result)
+			addUsage(details.usage, result.usage)
+			emit()
+			return result
+		}
+
+		const [panelResults, baselineResult] = await Promise.all([
+			mapWithConcurrencyLimit(panel, panel.length, async (member, index) => {
 				const snap = details.panel[index]
 				snap.status = "running"
 				emit()
@@ -898,8 +1040,9 @@ async function runFusion(
 				addUsage(details.usage, result.usage)
 				emit()
 				return result
-			},
-		)
+			}),
+			runBaseline(),
+		])
 
 		const outputs = panelResults.map((r) => resultText(r))
 		details.panelistOutputs = panel.map((m, i) => ({
@@ -907,6 +1050,19 @@ async function runFusion(
 			model: m.model,
 			output: outputs[i] ?? "(no output)",
 		}))
+		details.ledger = panelResults.map((r, i) =>
+			buildLedger(String.fromCharCode(65 + i), panel[i].model, r),
+		)
+		const baselineOutput =
+			baselineResult && getResultRunState(baselineResult) === "completed"
+				? resultText(baselineResult)
+				: undefined
+		if (baselineResult) {
+			details.baselineOutput = baselineOutput
+			details.ledger.push(
+				buildLedger("baseline", baselineMember.model, baselineResult),
+			)
+		}
 
 		const completed = panelResults.filter(
 			(r) => getResultRunState(r) === "completed",
@@ -932,6 +1088,7 @@ async function runFusion(
 			outputs,
 			blindJudge,
 			contextBundle,
+			baselineOutput,
 		)
 		const judgeUpdate: OnUpdateCallback = (partial) => {
 			const r = partial.details?.results[0]
@@ -1045,6 +1202,12 @@ export default function fusionExtension(pi: ExtensionAPI) {
 				}
 			}
 			const judge = resolveJudge(input, pool, panel)
+			const baselineEnabled = input.baseline === true
+			const baselineMember: ResolvedMember = {
+				label: "baseline",
+				model: judge.model,
+				thinkingLevel: judge.thinkingLevel,
+			}
 
 			const details = await runFusion(
 				input,
@@ -1052,6 +1215,8 @@ export default function fusionExtension(pi: ExtensionAPI) {
 				panel,
 				judge,
 				scoutEnabled,
+				baselineEnabled,
+				baselineMember,
 				web,
 				ctx,
 				signal,
@@ -1084,8 +1249,12 @@ export default function fusionExtension(pi: ExtensionAPI) {
 				const head = renderFusionText(details)
 				if (isPartial || details.phase !== "done")
 					return new Text(head, 0, 0)
+				const ledger = formatLedger(details.ledger)
 				return new Text(
-					`${head}\n\n${details.finalAnswer ?? ""}`.trim(),
+					[head, ledger || undefined, details.finalAnswer ?? ""]
+						.filter((s): s is string => Boolean(s))
+						.join("\n\n")
+						.trim(),
 					0,
 					0,
 				)
