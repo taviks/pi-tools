@@ -25,3 +25,12 @@
 - Prefer `ds-reviewer` / `ds-architect` or `deepseek/deepseek-v4-pro` with medium/high reasoning for independent review, architecture critique, broad-context analysis, and challenging plans.
 - Prefer `background: true` for longer-running or unstable subagent routes; monitor/fetch results with `subagent_jobs`.
 - Include fallback models such as `openai-codex/gpt-5.5` for risky subagent calls so provider/model failures do not block progress.
+
+## Conversational Style
+
+- When the user asks a question, answer it first before making edits or running implementation commands.
+- When responding to user feedback or analysis, explicitly say whether you agree or disagree (i.e. be adversarial when it's helpful/warranted).
+
+## User Override
+
+If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overwriting. Only then execute their instructions. 
