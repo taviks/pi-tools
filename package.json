@@ -45,6 +45,7 @@
 			"./src/extensions/goal-loop.ts",
 			"./src/extensions/subagent/index.ts",
 			"./src/extensions/workflow/index.ts",
+			"./src/extensions/fusion/index.ts",
 			"./src/extensions/workspace-id-guard.ts",
 			"./src/extensions/bash-orphan-cleanup.ts",
 			"./src/extensions/bash-output-compression.ts",

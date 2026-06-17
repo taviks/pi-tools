@@ -52,7 +52,7 @@ pnpm -s typecheck
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, Fusion deliberation, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 The package also ships light variants for the custom dark themes (`nord-light`, `tokyo-night-light`). On macOS startup/reload, the system-theme extension switches managed pairs (`nord`/`nord-light`, `tokyo-night`/`tokyo-night-light`) to match the system dark/light appearance without changing the saved `settings.json` theme.
 
@@ -61,6 +61,38 @@ Goal loop can be started explicitly with `/goal <objective>`. It also auto-start
 `/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Claude-family models also show `/effort max`, which maps Claude Code's max effort to the highest Pi thinking level exposed by that model and stays sticky across Claude model switches until a level is picked explicitly. `/effort status` shows the current level, max-mode state, and available levels.
 
 Bundled default subagents live in `agents/*.md`.
+
+### Fusion (multi-model deliberation)
+
+The `fusion` tool runs a small multi-model deliberation: a diverse panel of
+expert models answers the same prompt independently, then a judge model
+synthesizes the panel into a structured verdict — consensus, contradictions,
+partial coverage, unique insights, blind spots — and a final answer. It reuses
+the subagent runner for model routing, fallbacks, and usage tracking.
+
+- Start with `/fusion <prompt>`, or call the `fusion` tool directly for a hard
+  or high-stakes question. It is intentionally not a default — it spends tokens
+  across several models plus a judge.
+- **No modes.** Panelists have read-only repo tools (`read`/`grep`/`find`/`ls`,
+  read-only `bash`) plus `web_search`, and decide how to ground each answer.
+  When the working dir is a code repo, a lightweight self-gating scout pre-pass
+  runs first: if the question depends on the code it builds a shared context
+  bundle that grounds every panelist; if not (a general/research question) it
+  returns `NO_RELEVANT_CONTEXT` and is skipped. Force it with `scout: true/false`.
+- **Panel selection.** Auto-selects a cross-provider panel from your
+  **enabled** models (`enabledModels` in settings) so deprecated/offline models
+  the registry still lists are never auto-picked. Override with the
+  `panel`/`judge` tool params, the `PI_FUSION_PANEL` / `PI_FUSION_JUDGE`
+  environment variables (comma-separated model ids), or exclude models with
+  `PI_FUSION_EXCLUDE` (comma-separated substrings).
+- **Thinking level.** Panelists and judge default to `high` (Fusion is for hard
+  problems). Override per call with `thinkingLevel`, or per panelist/judge.
+- The judge is blinded to panelist model identities by default (Panelist A/B/C)
+  to reduce brand bias; pass `blindJudge: false` to disable.
+- **Web search** is allowed by default; pass `web: false` to forbid it. Requires
+  the `pi-web-search` companion package and `TAVILY_API_KEY`.
+- Bundled agents `fusion-panelist` and `fusion-judge` carry no hardcoded model;
+  Fusion supplies the model per run.
 
 ### Durable memory
 
@@ -96,6 +128,7 @@ Use `/memory pending` to review passively queued candidates, or `/memory harvest
 - `packages/pi-agent-handoff/` — `/handoff` commands and LLM-callable handoff artifact tooling.
 - `packages/pi-agent-coms/` — standalone local room-based peer messaging between Pi agents, with dynamic profile/presence updates and a fixed-seat room skill.
 - `packages/allowlisted-web/` — project-local read-only allowlisted web fetch extension.
+- `packages/pi-web-search/` — pluggable live `web_search` tool (Tavily backend by default) used by Fusion panelists; requires `TAVILY_API_KEY`.
 
 ## Config templates
 
