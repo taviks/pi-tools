@@ -80,10 +80,6 @@ const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 		reason: "rewriting remote git history",
 	},
 	{
-		pattern: /\b(DROP\s+(TABLE|DATABASE)|TRUNCATE(\s+TABLE)?)\b/i,
-		reason: "destructive SQL",
-	},
-	{
 		pattern: /\bkubectl\s+delete\b/i,
 		reason: "deleting Kubernetes resources",
 	},
@@ -292,6 +288,30 @@ function isSafeRecursiveDelete(command: string, cwd: string): boolean {
 	return true
 }
 
+const DANGEROUS_SQL_PATTERN =
+	/\b(?:DROP\s+(?:TABLE|DATABASE)\s+(?:IF\s+EXISTS\s+)?|TRUNCATE(?:\s+TABLE)?\s+(?:ONLY\s+)?)[`"'[]?[A-Za-z_][\w$.-]*/i
+const SQL_EXECUTOR_PATTERN =
+	/\b(?:psql|mysql|mariadb|sqlite3|duckdb|sqlcmd|snowsql)\b/i
+
+function maskShellQuotedStrings(command: string): string {
+	return command.replace(/'[^']*'|"(?:\\.|[^"])*"/g, (match) =>
+		" ".repeat(match.length),
+	)
+}
+
+function inspectDestructiveSql(command: string): Finding | undefined {
+	if (!DANGEROUS_SQL_PATTERN.test(command)) return undefined
+
+	if (
+		SQL_EXECUTOR_PATTERN.test(command) ||
+		DANGEROUS_SQL_PATTERN.test(maskShellQuotedStrings(command))
+	) {
+		return { kind: "destructive-command", reason: "destructive SQL" }
+	}
+
+	return undefined
+}
+
 function inspectCommand(command: string, cwd: string): Finding | undefined {
 	for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
 		if (!pattern.test(command)) continue
@@ -299,7 +319,7 @@ function inspectCommand(command: string, cwd: string): Finding | undefined {
 			continue
 		return { kind: "destructive-command", reason }
 	}
-	return undefined
+	return inspectDestructiveSql(command)
 }
 
 function inspectProtectedPath(
