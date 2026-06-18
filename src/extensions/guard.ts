@@ -49,7 +49,8 @@ const TEMP_ROOTS = Array.from(
 
 const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 	{
-		pattern: /\brm\s+(-[^\n;&|]*r|--recursive)\b/i,
+		pattern:
+			/\brm\b(?=[^\n;&|]*\s(?:-[^\s\n;&|]*[rR][^\s\n;&|]*|--recursive)(?:\s|$))/i,
 		reason: "recursive delete",
 	},
 	{
@@ -155,6 +156,159 @@ function shellTokens(segment: string): string[] {
 		tokens.push(stripMatchingQuotes(match[1] ?? match[2] ?? match[3] ?? ""))
 	}
 	return tokens.filter(Boolean)
+}
+
+const SHELL_ASSIGNMENT_PATTERN =
+	/(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=(\$\([^)]*\)|"(?:\\.|[^"])*"|'[^']*'|[^\s;&|]+)/g
+const UNSAFE_SHELL_VARIABLE = "/__pi_guard_unsafe_shell_variable__"
+
+function normalizeShellAssignmentValue(rawValue: string): string {
+	return stripMatchingQuotes(rawValue.trim())
+}
+
+function shellTempVariableValue(
+	name: string,
+	tempVars: Map<string, string>,
+): string | undefined {
+	if (tempVars.has(name)) return tempVars.get(name)
+	if (name !== "TMPDIR" && name !== "TMP" && name !== "TEMP") {
+		return undefined
+	}
+	const envValue = process.env[name]
+	return typeof envValue === "string" && envValue.trim() ? envValue : undefined
+}
+
+function expandShellTempPath(
+	value: string,
+	tempVars: Map<string, string>,
+): string | undefined {
+	let expanded = normalizeShellAssignmentValue(value)
+
+	expanded = expanded.replace(
+		/\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]+)\}/g,
+		(_match, name: string, fallback: string) =>
+			shellTempVariableValue(name, tempVars) ??
+			normalizeShellAssignmentValue(fallback),
+	)
+
+	expanded = expanded.replace(
+		/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+		(match, name: string) => shellTempVariableValue(name, tempVars) ?? match,
+	)
+
+	expanded = expanded.replace(
+		/\$([A-Za-z_][A-Za-z0-9_]*)/g,
+		(match, name) => shellTempVariableValue(name, tempVars) ?? match,
+	)
+
+	// Any unresolved shell expansion means the target is not statically proven
+	// temp-scoped, so leave it guarded instead of guessing.
+	if (/[`$]/.test(expanded)) return undefined
+	return expanded
+}
+
+function resolveMktempTempPath(
+	value: string,
+	cwd: string,
+	tempVars: Map<string, string>,
+): string | undefined {
+	const match = value.match(/^\$\((.*)\)$/s)
+	if (!match) return undefined
+
+	const tokens = shellTokens(match[1] || "")
+	if (tokens[0] !== "mktemp") return undefined
+
+	let tempDir: string | undefined
+	let template: string | undefined
+	for (let i = 1; i < tokens.length; i++) {
+		const token = tokens[i]
+		if (!token) continue
+		if (token === "-d" || token === "-q" || token === "-u") continue
+		if (token === "-t") {
+			template = tokens[++i]
+			continue
+		}
+		if (token === "-p" || token === "--tmpdir") {
+			tempDir = tokens[++i]
+			continue
+		}
+		if (token.startsWith("--tmpdir=")) {
+			tempDir = token.slice("--tmpdir=".length)
+			continue
+		}
+		if (token.startsWith("-p") && token.length > 2) {
+			tempDir = token.slice(2)
+			continue
+		}
+		if (token.startsWith("-")) continue
+		template = token
+	}
+
+	const expandedTempDir = tempDir
+		? expandShellTempPath(tempDir, tempVars)
+		: os.tmpdir()
+	if (!expandedTempDir) return undefined
+
+	const expandedTemplate = template
+		? expandShellTempPath(template, tempVars)
+		: undefined
+	if (template && !expandedTemplate) return undefined
+
+	const candidate = expandedTemplate
+		? path.isAbsolute(expandedTemplate)
+			? expandedTemplate
+			: path.join(expandedTempDir, expandedTemplate)
+		: path.join(expandedTempDir, "mktemp")
+
+	// The exact mktemp suffix is unknowable before execution; validating the
+	// template/default parent keeps this exemption limited to temp roots.
+	if (!isTempScratchPath(candidate, cwd)) return undefined
+	return resolvePath(candidate, cwd)
+}
+
+function resolveShellAssignmentTempPath(
+	rawValue: string,
+	cwd: string,
+	tempVars: Map<string, string>,
+): string | undefined {
+	const value = normalizeShellAssignmentValue(rawValue)
+	const mktempPath = resolveMktempTempPath(value, cwd, tempVars)
+	if (mktempPath) return mktempPath
+
+	const expanded = expandShellTempPath(value, tempVars)
+	if (!expanded) return undefined
+	if (!isTempScratchPath(expanded, cwd)) return undefined
+	return resolvePath(expanded, cwd)
+}
+
+function collectSafeTempVariables(
+	command: string,
+	cwd: string,
+): Map<string, string> {
+	const tempVars = new Map<string, string>()
+	for (const match of command.matchAll(SHELL_ASSIGNMENT_PATTERN)) {
+		const name = match[1]
+		const rawValue = match[2]
+		if (!name || !rawValue) continue
+		if (tempVars.get(name) === UNSAFE_SHELL_VARIABLE) continue
+		const tempPath = resolveShellAssignmentTempPath(rawValue, cwd, tempVars)
+		if (tempPath) tempVars.set(name, tempPath)
+		else tempVars.set(name, UNSAFE_SHELL_VARIABLE)
+	}
+	return tempVars
+}
+
+function resolveSafeTempTarget(
+	token: string,
+	cwd: string,
+	tempVars: Map<string, string>,
+): string | undefined {
+	const expanded = expandShellTempPath(token, tempVars)
+	if (!expanded || isBroadTargetToken(expanded)) return undefined
+	const resolved = resolvePath(expanded, cwd)
+	if (!isTempScratchPath(expanded, cwd)) return undefined
+	if (isTempRootItself(resolved)) return undefined
+	return resolved
 }
 
 function nearestExistingPath(targetPath: string): string | undefined {
@@ -267,23 +421,81 @@ function isTempRootItself(targetPath: string): boolean {
 	}
 }
 
-function isSafeTempDeleteTarget(token: string, cwd: string): boolean {
-	if (isBroadTargetToken(token)) return false
-	const resolved = resolvePath(token, cwd)
-	if (!isTempScratchPath(token, cwd)) return false
-	return !isTempRootItself(resolved)
+function isSafeTempDeleteTarget(
+	token: string,
+	cwd: string,
+	tempVars: Map<string, string>,
+): boolean {
+	return resolveSafeTempTarget(token, cwd, tempVars) !== undefined
 }
 
-function isSafeRecursiveDelete(command: string, cwd: string): boolean {
+function isSafeRecursiveDelete(
+	command: string,
+	cwd: string,
+	tempVars: Map<string, string>,
+): boolean {
 	const targetGroups = extractRecursiveRmTargets(command)
 	if (targetGroups.length === 0) return false
 	for (const targets of targetGroups) {
 		if (targets.length === 0) return false
 		const allTargetsSafe = targets.every((target) => {
 			if (SAFE_RM_TARGETS.has(path.basename(target))) return true
-			return isSafeTempDeleteTarget(target, cwd)
+			return isSafeTempDeleteTarget(target, cwd, tempVars)
 		})
 		if (!allTargetsSafe) return false
+	}
+	return true
+}
+
+function extractFileModeTargets(
+	command: string,
+	binary: "chmod" | "chown",
+): string[][] {
+	const targetGroups: string[][] = []
+	const pattern = new RegExp(`\\b${binary}\\b\\s+([^\\n;&|]+)`, "gi")
+	for (const match of command.matchAll(pattern)) {
+		const tokens = shellTokens(match[1] || "")
+		let afterDoubleDash = false
+		let modeOrOwnerConsumed = false
+		const targets: string[] = []
+
+		for (const token of tokens) {
+			if (!afterDoubleDash && token === "--") {
+				afterDoubleDash = true
+				continue
+			}
+			if (!afterDoubleDash && token.startsWith("--")) continue
+			if (!afterDoubleDash && /^-[A-Za-z]+$/.test(token)) continue
+			if (!modeOrOwnerConsumed) {
+				modeOrOwnerConsumed = true
+				continue
+			}
+			targets.push(token)
+		}
+
+		targetGroups.push(targets)
+	}
+	return targetGroups
+}
+
+function isSafeTempFileModeCommand(
+	command: string,
+	cwd: string,
+	binary: "chmod" | "chown",
+	tempVars: Map<string, string>,
+): boolean {
+	const targetGroups = extractFileModeTargets(command, binary)
+	if (targetGroups.length === 0) return false
+	for (const targets of targetGroups) {
+		if (targets.length === 0) return false
+		if (
+			!targets.every(
+				(target) =>
+					resolveSafeTempTarget(target, cwd, tempVars) !== undefined,
+			)
+		) {
+			return false
+		}
 	}
 	return true
 }
@@ -313,10 +525,27 @@ function inspectDestructiveSql(command: string): Finding | undefined {
 }
 
 function inspectCommand(command: string, cwd: string): Finding | undefined {
+	const tempVars = collectSafeTempVariables(command, cwd)
 	for (const { pattern, reason } of DANGEROUS_COMMAND_PATTERNS) {
 		if (!pattern.test(command)) continue
-		if (reason === "recursive delete" && isSafeRecursiveDelete(command, cwd))
+		if (
+			reason === "recursive delete" &&
+			isSafeRecursiveDelete(command, cwd, tempVars)
+		) {
 			continue
+		}
+		if (
+			reason === "broad permission change" &&
+			isSafeTempFileModeCommand(command, cwd, "chmod", tempVars)
+		) {
+			continue
+		}
+		if (
+			reason === "recursive ownership change" &&
+			isSafeTempFileModeCommand(command, cwd, "chown", tempVars)
+		) {
+			continue
+		}
 		return { kind: "destructive-command", reason }
 	}
 	return inspectDestructiveSql(command)
