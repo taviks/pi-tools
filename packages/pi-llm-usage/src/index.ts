@@ -185,6 +185,13 @@ function renderPanel(
 				}
 			}
 
+			if (result.note) {
+				lines.push(emptyRow())
+				for (const noteLine of wrapText(`⚠ ${result.note}`, contentArea)) {
+					lines.push(row(theme.fg("warning", noteLine)))
+				}
+			}
+
 			if (i < results.length - 1) {
 				addVerticalPad(verticalPadding)
 			}
@@ -241,6 +248,25 @@ function linksVisibleWidth(links: ProviderLink[]): number {
 	return (
 		links.reduce((sum, l) => sum + l.label.length + 2, 0) + (links.length - 1)
 	)
+}
+
+function wrapText(text: string, maxWidth: number): string[] {
+	if (maxWidth <= 0) return [text]
+	const words = text.split(/\s+/)
+	const lines: string[] = []
+	let current = ""
+	for (const word of words) {
+		if (current === "") {
+			current = word
+		} else if (visibleWidth(`${current} ${word}`) <= maxWidth) {
+			current += ` ${word}`
+		} else {
+			lines.push(current)
+			current = word
+		}
+	}
+	if (current) lines.push(current)
+	return lines
 }
 
 function fitTextEnd(text: string, maxLength: number): string {

@@ -30,6 +30,19 @@ Shows usage windows for:
 
 Close with `Esc`, `Enter`, or `q`.
 
+### Codex "premium" limit detection
+
+The Codex `wham/usage` endpoint only reports the standard 5h/weekly windows. It
+does **not** expose the per-feature **premium** rate-limit bucket that premium
+models (e.g. `gpt-5.5`) burn — so `/usage` (and the ChatGPT/Codex app) can show
+"60% left" while a premium request is actually rejected with a 429.
+
+That premium bucket only appears in the `X-Codex-*` headers of a real 429, which
+Pi records in its session logs. When a recent Codex `usage_limit_reached` 429 is
+still within its reset window, `/usage` scans those logs and surfaces an extra
+window (e.g. `Premium 5h`) plus a note explaining the source. The indicator
+clears automatically once the reported reset time passes.
+
 ## Notes
 
 - Uses your existing OAuth sessions (no API keys required)
