@@ -52,7 +52,7 @@ pnpm -s typecheck
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, side questions, usage/cost audit, clipboard helpers, verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, Fusion deliberation, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, side questions, usage/cost audit, clipboard helpers (`/copy-last`, `/copy-block`, `/copy-session-id`), verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, Fusion deliberation, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 The package also ships light variants for the custom dark themes (`nord-light`, `tokyo-night-light`). On macOS startup/reload, the system-theme extension switches managed pairs (`nord`/`nord-light`, `tokyo-night`/`tokyo-night-light`) to match the system dark/light appearance without changing the saved `settings.json` theme.
 

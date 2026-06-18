@@ -314,6 +314,27 @@ export default function (pi: ExtensionAPI) {
 		},
 	})
 
+	pi.registerCommand("copy-session-id", {
+		description: "Copy the current Pi session ID",
+		handler: async (_args, ctx) => {
+			const sessionId = ctx.sessionManager.getSessionId()
+			const persisted = Boolean(ctx.sessionManager.getSessionFile())
+			await copyOrFillEditor(
+				sessionId,
+				ctx,
+				persisted
+					? "Copied current Pi session ID."
+					: "Copied current Pi session ID, but this session is not persisted.",
+			)
+			if (!persisted) {
+				ctx.ui.notify(
+					"This session is not saved to disk, so another agent may not be able to inspect it by ID.",
+					"warning",
+				)
+			}
+		},
+	})
+
 	pi.registerCommand("copy-block", {
 		description: "Copy a fenced code block from the last assistant response",
 		getArgumentCompletions: copyBlockCompletions,
