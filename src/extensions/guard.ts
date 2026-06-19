@@ -43,7 +43,10 @@ function safeRealpath(inputPath: string): string {
 
 const TEMP_ROOTS = Array.from(
 	new Set(
-		[os.tmpdir(), "/tmp", "/private/tmp"].map((root) => safeRealpath(root)),
+		[os.tmpdir(), "/tmp", "/private/tmp"].flatMap((root) => [
+			path.resolve(root),
+			safeRealpath(root),
+		]),
 	),
 )
 
