@@ -73,7 +73,11 @@ Avoid subagents for:
   - agents: `ds-reviewer`, `ds-architect`
   - model override: `deepseek/deepseek-v4-pro`
   - reasoning: medium/high based on risk
-- For risky subagent calls, include fallback models such as `openai-codex/gpt-5.5` so provider/model failures do not block progress.
+- When the user asks for Claude/Anthropic or wants to use an active Claude subscription, use subagent `model` aliases or categories:
+  - hard review/architecture/deep reasoning: `model: "opus"` or `category: "claude-deep"` / `"claude-review"`
+  - balanced planning/implementation: `model: "sonnet"`
+  - fast scouting: `model: "haiku"` or `category: "claude-quick"`
+- For risky subagent calls, include fallback models such as `openai-codex/gpt-5.5`, `sonnet`, or `opus` so provider/model failures do not block progress.
 - For longer-running or unstable routes, use `background: true`, then monitor/fetch results with `subagent_jobs`.
 
 ## Parallel and background workflow

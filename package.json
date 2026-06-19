@@ -11,9 +11,6 @@
 	"keywords": [
 		"pi-package"
 	],
-	"workspaces": [
-		"packages/*"
-	],
 	"scripts": {
 		"check": "pnpm -s check:layout && pnpm -s format:check && pnpm -s typecheck",
 		"check:layout": "bash scripts/check-layout.sh",

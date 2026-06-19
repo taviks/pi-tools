@@ -23,8 +23,10 @@
 - Primary orchestration, high-risk implementation, final synthesis, and user-facing decisions should stay on OpenAI Codex/GPT unless the user asks otherwise.
 - Prefer `ds-scout` / `ds-triage` or `deepseek/deepseek-v4-flash` with low reasoning for fast scouting, repo recon, noisy log/test triage, and parallel context gathering.
 - Prefer `ds-reviewer` / `ds-architect` or `deepseek/deepseek-v4-pro` with medium/high reasoning for independent review, architecture critique, broad-context analysis, and challenging plans.
+- When the user asks for Claude/Anthropic or to make use of an active Claude subscription, use subagent `model` aliases (`opus`, `sonnet`, `haiku`) or categories (`claude-quick`, `claude-deep`, `claude-review`, `claude-ultrabrain`) as appropriate.
+- Prefer `anthropic/claude-opus-4-8` (alias `opus`) for hard review/architecture/deep reasoning, `anthropic/claude-sonnet-4-6` (alias `sonnet`) for balanced planning/implementation, and `anthropic/claude-haiku-4-5` (alias `haiku`) for fast scouting when available.
 - Prefer `background: true` for longer-running or unstable subagent routes; monitor/fetch results with `subagent_jobs`.
-- Include fallback models such as `openai-codex/gpt-5.5` for risky subagent calls so provider/model failures do not block progress.
+- Include fallback models such as `openai-codex/gpt-5.5` or `sonnet`/`opus` for risky subagent calls so provider/model failures do not block progress.
 
 ## Conversational Style
 

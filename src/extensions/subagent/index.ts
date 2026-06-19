@@ -124,90 +124,189 @@ const CANONICAL_MODEL_IDS: Record<string, string> = {
 	"gpt-5.4-mini": "openai-codex/gpt-5.4-mini",
 	"gpt-5.3-codex": "openai-codex/gpt-5.3-codex",
 	"gpt-5.3-codex-spark": "openai-codex/gpt-5.3-codex-spark",
+	claude: "anthropic/claude-opus-4-8",
+	opus: "anthropic/claude-opus-4-8",
+	"claude-opus": "anthropic/claude-opus-4-8",
+	"claude-opus-4-8": "anthropic/claude-opus-4-8",
+	"claude-opus-4-7": "anthropic/claude-opus-4-7",
+	"claude-opus-4-6": "anthropic/claude-opus-4-6",
+	"claude-opus-4-5": "anthropic/claude-opus-4-5",
+	sonnet: "anthropic/claude-sonnet-4-6",
+	"claude-sonnet": "anthropic/claude-sonnet-4-6",
+	"claude-sonnet-4-6": "anthropic/claude-sonnet-4-6",
+	"claude-sonnet-4-5": "anthropic/claude-sonnet-4-5",
+	haiku: "anthropic/claude-haiku-4-5",
+	"claude-haiku": "anthropic/claude-haiku-4-5",
+	"claude-haiku-4-5": "anthropic/claude-haiku-4-5",
 }
+
+const OPENAI_STRONG_FALLBACK_MODELS = [
+	"openai-codex/gpt-5.4",
+	"openai-codex/gpt-5.3-codex",
+]
+const OPENAI_VERIFY_FALLBACK_MODELS = [
+	"openai-codex/gpt-5.5",
+	"openai-codex/gpt-5.4",
+]
+const CLAUDE_STRONG_FALLBACK_MODELS = [
+	"anthropic/claude-opus-4-8",
+	"anthropic/claude-sonnet-4-6",
+	"anthropic/claude-opus-4-7",
+	"anthropic/claude-opus-4-6",
+	"anthropic/claude-opus-4-5",
+	"anthropic/claude-sonnet-4-5",
+]
+const CLAUDE_FAST_FALLBACK_MODELS = [
+	"anthropic/claude-haiku-4-5",
+	"anthropic/claude-sonnet-4-6",
+	"anthropic/claude-opus-4-8",
+]
+const DEFAULT_STRONG_FALLBACK_MODELS = [
+	...OPENAI_STRONG_FALLBACK_MODELS,
+	...CLAUDE_STRONG_FALLBACK_MODELS,
+]
+const DEFAULT_FAST_FALLBACK_MODELS = [
+	...OPENAI_STRONG_FALLBACK_MODELS,
+	...CLAUDE_FAST_FALLBACK_MODELS,
+]
+const DEFAULT_VERIFY_FALLBACK_MODELS = [
+	...OPENAI_VERIFY_FALLBACK_MODELS,
+	...CLAUDE_FAST_FALLBACK_MODELS,
+]
 
 interface CategoryRoutingConfig {
 	model?: string
 	thinkingLevel?: ThinkingLevel
 	fallbackModels?: string[]
 	unstable?: boolean
+	forceModel?: boolean
 }
 
 const CATEGORY_ROUTING: Record<string, CategoryRoutingConfig> = {
 	quick: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_FAST_FALLBACK_MODELS,
 	},
 	deep: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	ultrabrain: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "xhigh",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	review: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	"visual-engineering": {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	artistry: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	design: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	layout: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	style: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	writing: {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "medium",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	"unspecified-low": {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_FAST_FALLBACK_MODELS,
 	},
 	"unspecified-high": {
 		model: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
+	},
+	claude: {
+		model: "anthropic/claude-opus-4-8",
+		thinkingLevel: "high",
+		fallbackModels: [
+			"anthropic/claude-sonnet-4-6",
+			"anthropic/claude-opus-4-7",
+			...OPENAI_STRONG_FALLBACK_MODELS,
+		],
+		forceModel: true,
+	},
+	"claude-quick": {
+		model: "anthropic/claude-haiku-4-5",
+		thinkingLevel: "low",
+		fallbackModels: [
+			"anthropic/claude-sonnet-4-6",
+			"anthropic/claude-opus-4-8",
+			...OPENAI_STRONG_FALLBACK_MODELS,
+		],
+		forceModel: true,
+	},
+	"claude-deep": {
+		model: "anthropic/claude-opus-4-8",
+		thinkingLevel: "high",
+		fallbackModels: [
+			"anthropic/claude-sonnet-4-6",
+			"anthropic/claude-opus-4-7",
+			...OPENAI_STRONG_FALLBACK_MODELS,
+		],
+		forceModel: true,
+	},
+	"claude-review": {
+		model: "anthropic/claude-opus-4-8",
+		thinkingLevel: "high",
+		fallbackModels: [
+			"anthropic/claude-sonnet-4-6",
+			"anthropic/claude-opus-4-7",
+			...OPENAI_STRONG_FALLBACK_MODELS,
+		],
+		forceModel: true,
+	},
+	"claude-ultrabrain": {
+		model: "anthropic/claude-opus-4-8",
+		thinkingLevel: "xhigh",
+		fallbackModels: [
+			"anthropic/claude-opus-4-7",
+			"anthropic/claude-sonnet-4-6",
+			...OPENAI_STRONG_FALLBACK_MODELS,
+		],
+		forceModel: true,
 	},
 	verify: {
 		model: "openai-codex/gpt-5.4-mini",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"],
+		fallbackModels: DEFAULT_VERIFY_FALLBACK_MODELS,
 	},
 	verification: {
 		model: "openai-codex/gpt-5.4-mini",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"],
+		fallbackModels: DEFAULT_VERIFY_FALLBACK_MODELS,
 	},
 	test: {
 		model: "openai-codex/gpt-5.4-mini",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"],
+		fallbackModels: DEFAULT_VERIFY_FALLBACK_MODELS,
 	},
 }
 
@@ -221,37 +320,37 @@ const AGENT_TYPE_MODEL_HIERARCHY: Record<string, AgentTypeModelHierarchy> = {
 	coordinator: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "medium",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	planner: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	reviewer: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "high",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	worker: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "medium",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 	scout: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_FAST_FALLBACK_MODELS,
 	},
 	verifier: {
 		primaryModel: "openai-codex/gpt-5.4-mini",
 		thinkingLevel: "low",
-		fallbackModels: ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4"],
+		fallbackModels: DEFAULT_VERIFY_FALLBACK_MODELS,
 	},
 	other: {
 		primaryModel: "openai-codex/gpt-5.5",
 		thinkingLevel: "medium",
-		fallbackModels: ["openai-codex/gpt-5.4", "openai-codex/gpt-5.3-codex"],
+		fallbackModels: DEFAULT_STRONG_FALLBACK_MODELS,
 	},
 }
 
@@ -359,6 +458,17 @@ function getModelConcurrencyLimit(model: string | undefined): number {
 	const normalized = splitModelThinking(model).model
 	if (!normalized) return Number.POSITIVE_INFINITY
 	return MODEL_CONCURRENCY_LIMITS[normalized] ?? Number.POSITIVE_INFINITY
+}
+
+function getProviderFallbackModels(model: string | undefined): string[] {
+	const normalized = splitModelThinking(model).model?.toLowerCase()
+	if (!normalized) return []
+	if (normalized.startsWith("anthropic/")) {
+		return normalized.includes("haiku")
+			? CLAUDE_FAST_FALLBACK_MODELS
+			: CLAUDE_STRONG_FALLBACK_MODELS
+	}
+	return []
 }
 
 function incrementCount(map: Map<string, number>, key: string | undefined) {
@@ -481,22 +591,29 @@ function resolveRunModelPlan(
 	const hierarchy = getAgentTypeHierarchy(agent.name)
 	const parsedModelOverride = splitModelThinking(modelOverride)
 	const parsedAgentDefault = splitModelThinking(agent.model)
+	const parsedCategoryModel = splitModelThinking(categoryConfig?.model)
+	const parsedHierarchyPrimary = splitModelThinking(hierarchy.primaryModel)
 	const agentDefaultModel = parsedAgentDefault.model
-	const categoryPrimaryModel = isVisualCategory(category)
-		? (normalizeModelId(categoryConfig?.model) ?? "openai-codex/gpt-5.5")
-		: undefined
-	// Explicit tool overrides win first, and visual categories still force the visual route.
-	// Otherwise prefer the agent's own frontmatter model before generic routing so
-	// specialized agents like ds-scout keep their configured provider instead of
-	// being rewritten to the scout hierarchy.
+	const categoryPrimaryModel =
+		categoryConfig?.forceModel || isVisualCategory(category)
+			? (parsedCategoryModel.model ?? "openai-codex/gpt-5.5")
+			: undefined
+	// Explicit tool overrides win first, and categories marked forceModel (plus
+	// visual categories) can force a route. Otherwise prefer the agent's own
+	// frontmatter model before generic routing so specialized agents like ds-scout
+	// keep their configured provider instead of being rewritten to the scout
+	// hierarchy.
 	let primaryModel =
 		parsedModelOverride.model ??
 		categoryPrimaryModel ??
 		agentDefaultModel ??
-		normalizeModelId(hierarchy.primaryModel) ??
-		normalizeModelId(categoryConfig?.model)
+		parsedHierarchyPrimary.model ??
+		parsedCategoryModel.model
 
 	const explicitFallbackModels = normalizeModelList(fallbackModels)
+	const providerFallbackModels = getProviderFallbackModels(
+		parsedModelOverride.model,
+	)
 	const reportableRequestedModels = normalizeModelList([
 		...(parsedModelOverride.model ? [parsedModelOverride.model] : []),
 		...explicitFallbackModels,
@@ -504,6 +621,7 @@ function resolveRunModelPlan(
 	])
 	const mergedFallbacks = normalizeModelList([
 		...explicitFallbackModels,
+		...providerFallbackModels,
 		...(categoryConfig?.fallbackModels ?? []),
 		...(hierarchy.fallbackModels ?? []),
 		...(agentDefaultModel ? [agentDefaultModel] : []),
@@ -2217,13 +2335,16 @@ const TaskItem = Type.Object({
 		Type.String({ description: "Working directory for the agent process" }),
 	),
 	model: Type.Optional(
-		Type.String({ description: "Optional model override for this task." }),
+		Type.String({
+			description:
+				"Optional model override for this task. Accepts provider/model ids or aliases like opus, sonnet, haiku.",
+		}),
 	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
 		Type.String({
 			description:
-				"Optional routing category (quick, deep, review, visual-engineering, etc.).",
+				"Optional routing category (quick, deep, review, visual-engineering, claude-quick, claude-deep, claude-review, etc.).",
 		}),
 	),
 	fallbackModels: Type.Optional(
@@ -2243,14 +2364,15 @@ const ChainItem = Type.Object({
 	),
 	model: Type.Optional(
 		Type.String({
-			description: "Optional model override for this chain step.",
+			description:
+				"Optional model override for this chain step. Accepts provider/model ids or aliases like opus, sonnet, haiku.",
 		}),
 	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
 		Type.String({
 			description:
-				"Optional routing category (quick, deep, review, visual-engineering, etc.).",
+				"Optional routing category (quick, deep, review, visual-engineering, claude-quick, claude-deep, claude-review, etc.).",
 		}),
 	),
 	fallbackModels: Type.Optional(
@@ -2276,13 +2398,16 @@ const SubagentParams = Type.Object({
 		Type.String({ description: "Task to delegate (for single mode)" }),
 	),
 	model: Type.Optional(
-		Type.String({ description: "Optional model override for single mode." }),
+		Type.String({
+			description:
+				"Optional model override for single mode. Accepts provider/model ids or aliases like opus, sonnet, haiku.",
+		}),
 	),
 	thinkingLevel: Type.Optional(ThinkingLevelSchema),
 	category: Type.Optional(
 		Type.String({
 			description:
-				"Optional routing category for single mode (quick, deep, review, visual-engineering, etc.).",
+				"Optional routing category for single mode (quick, deep, review, visual-engineering, claude-quick, claude-deep, claude-review, etc.).",
 		}),
 	),
 	fallbackModels: Type.Optional(
@@ -2929,6 +3054,8 @@ export default function (pi: ExtensionAPI) {
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
 			"Supports model, thinkingLevel, and category routing overrides plus fallback model chains.",
+			"Model overrides accept canonical ids or aliases like opus, sonnet, haiku for Claude routes.",
+			"Claude categories include claude-quick, claude-deep, claude-review, and claude-ultrabrain.",
 			"Set background=true to enqueue as a tracked background job.",
 			"Unstable model/category routes can auto-switch to background mode for safer monitoring.",
 			"Use subagent_jobs to list status, fetch results, cancel jobs, or wait-all.",

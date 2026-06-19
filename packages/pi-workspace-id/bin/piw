@@ -281,6 +281,16 @@ apply_proxyshire_env() {
   fi
 }
 
+apply_pi_update_env() {
+  if [ "${1:-}" = "update" ]; then
+    # Pi asks `pnpm root -g` during self-update detection. pnpm can print
+    # project package-manager warnings on stdout before the root path, which
+    # makes Pi think this global pnpm install is unmanaged.
+    export PNPM_CONFIG_PM_ON_FAIL="${PNPM_CONFIG_PM_ON_FAIL:-ignore}"
+    export PNPM_CONFIG_LOGLEVEL="${PNPM_CONFIG_LOGLEVEL:-error}"
+  fi
+}
+
 run_pi() {
   if ! command -v pi >/dev/null 2>&1; then
     err "pi command not found in PATH"
@@ -288,6 +298,7 @@ run_pi() {
   fi
 
   apply_proxyshire_env
+  apply_pi_update_env "${1:-}"
 
   # Pi package/config commands must remain first-position CLI commands.
   # Injecting --session-dir before them makes pi treat the command name as a

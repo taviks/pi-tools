@@ -34,7 +34,8 @@ Model routing guidance (set `model` override on `subagent` calls when useful):
 - Default for coordination / planning / coding / review / scouting: `openai-codex/gpt-5.5`
 - For migration visual/UI parity work, still use `openai-codex/gpt-5.5` unless the user explicitly requests another model.
 - If user asks for a specific model/provider, honor that.
-- If a required model is unavailable, prefer another OpenAI model fallback and state it briefly.
+- If user asks for Claude/Anthropic or to use a Claude subscription, use `model` aliases (`opus`, `sonnet`, `haiku`) or categories (`claude-quick`, `claude-deep`, `claude-review`, `claude-ultrabrain`) as appropriate.
+- If a required model is unavailable, prefer a nearby same-provider fallback first, then OpenAI fallback, and state it briefly.
 
 Agent selection guidance:
 - `scout` for fast codebase discovery and context gathering.
