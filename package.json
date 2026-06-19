@@ -17,6 +17,7 @@
 		"format": "prettier --write \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,yml,yaml}\"",
 		"format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,yml,yaml}\"",
 		"typecheck": "tsc --noEmit",
+		"test:coms": "rm -rf /tmp/pi-agent-coms-test && tsc --module NodeNext --moduleResolution NodeNext --target ES2022 --types node --esModuleInterop true --allowSyntheticDefaultImports true --skipLibCheck true --strict true --outDir /tmp/pi-agent-coms-test --noEmit false packages/pi-agent-coms/src/index.ts packages/pi-agent-coms/test/*.test.ts && ln -s \"$PWD/node_modules\" /tmp/pi-agent-coms-test/node_modules && node --test /tmp/pi-agent-coms-test/test/*.test.js",
 		"pi:link-config": "bash scripts/link-agent-config.sh --apply"
 	},
 	"pi": {

@@ -36,6 +36,10 @@ const CONNECT_TIMEOUT_MS = 8_000
 const PING_INTERVAL_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 15_000
 const SERVER_CLOSE_TIMEOUT_MS = 1_000
+const AUTO_REPLY_MAX_ATTEMPTS = 11
+const AUTO_REPLY_RETRY_BASE_MS = HEARTBEAT_INTERVAL_MS
+const AUTO_REPLY_RETRY_MAX_MS = 5 * 60 * 1000
+const AUTO_REPLY_STRANDED_AFTER_MS = DEFAULT_TIMEOUT_MS
 const MAX_ENVELOPE_BYTES = 256 * 1024
 const MAX_MESSAGE_CHARS = 48_000
 const MAX_INBOX_MESSAGES = 200
@@ -438,6 +442,8 @@ interface AutoReplyDelivery {
 	response?: unknown
 	error: string | null
 	attempts: number
+	created_at: string
+	next_attempt_at?: string
 	last_error?: string
 }
 
@@ -853,6 +859,13 @@ function isManagedEndpoint(endpoint: string): boolean {
 	const socketsDir = path.resolve(path.join(comsHome(), "sockets"))
 	const resolved = path.resolve(endpoint)
 	return resolved.startsWith(`${socketsDir}${path.sep}`)
+}
+
+function targetSessionMatches(
+	targetSession: string | null | undefined,
+	identitySession: string,
+): boolean {
+	return !targetSession || targetSession === identitySession
 }
 
 function unlinkManagedEndpoint(endpoint: string): void {
@@ -1564,6 +1577,37 @@ function lastAssistantTextFromMessages(messages: unknown): string {
 	return text
 }
 
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function textContainsComsMarker(text: string, msgId?: string): boolean {
+	const lines = text.split(/\r?\n/)
+	for (let i = 0; i < lines.length; i++) {
+		if (
+			!/^\[agent-coms (?:say|ask|status|reply) from .+\]$/.test(
+				lines[i] ?? "",
+			)
+		)
+			continue
+		let hasMessageId = false
+		let hasThreadId = false
+		for (let j = i + 1; j < Math.min(lines.length, i + 12); j++) {
+			const line = lines[j] ?? ""
+			if (!line.trim()) break
+			if (msgId) {
+				if (new RegExp(`^message_id: ${escapeRegExp(msgId)}$`).test(line))
+					hasMessageId = true
+			} else if (/^message_id: .+$/.test(line)) {
+				hasMessageId = true
+			}
+			if (/^thread_id: .+$/.test(line)) hasThreadId = true
+		}
+		if (hasMessageId && hasThreadId) return true
+	}
+	return false
+}
+
 function messageContainsComsMessage(message: unknown, msgId: string): boolean {
 	const m = message as {
 		role?: string
@@ -1571,7 +1615,7 @@ function messageContainsComsMessage(message: unknown, msgId: string): boolean {
 		content?: unknown
 		details?: unknown
 	} | null
-	if (!m) return false
+	if (!m || m.role === "assistant") return false
 	const details = m.details as { id?: unknown } | undefined
 	if (
 		m.role === "custom" &&
@@ -1579,15 +1623,36 @@ function messageContainsComsMessage(message: unknown, msgId: string): boolean {
 		details?.id === msgId
 	)
 		return true
-	return (
-		typeof m.content === "string" &&
-		m.content.includes(`message_id: ${msgId}`)
-	)
+	return textContainsComsMarker(extractMessageText(m), msgId)
 }
 
 function isComsMessage(message: unknown): boolean {
 	const m = message as { role?: string; customType?: string } | null
-	return m?.role === "custom" && m.customType === CUSTOM_MESSAGE_TYPE
+	if (m?.role === "custom" && m.customType === CUSTOM_MESSAGE_TYPE) return true
+	return textContainsComsMarker(extractMessageText(message))
+}
+
+function shouldExpireStrandedAutoReply(params: {
+	localReceivedAt?: string
+	nowMs?: number
+	localAgentWorking: boolean
+	recordRunId?: number
+	activeAgentRunSeq: number
+	hasPendingDelivery: boolean
+	autoReplySent?: boolean
+}): boolean {
+	if (params.autoReplySent || params.hasPendingDelivery) return false
+	if (
+		params.localAgentWorking &&
+		params.recordRunId !== undefined &&
+		params.recordRunId === params.activeAgentRunSeq
+	)
+		return false
+	const received = Date.parse(params.localReceivedAt ?? "")
+	if (!Number.isFinite(received)) return false
+	return (
+		(params.nowMs ?? Date.now()) - received >= AUTO_REPLY_STRANDED_AFTER_MS
+	)
 }
 
 function assistantTextAfterComsMessage(
@@ -1602,18 +1667,31 @@ function assistantTextAfterComsMessage(
 	let sawAssistant = false
 	let text = ""
 	for (const message of messages.slice(start + 1)) {
+		const m = message as { role?: string } | null
+		if (m?.role === "assistant") {
+			sawAssistant = true
+			const candidate = extractMessageText(m)
+			if (candidate.trim()) text = candidate.trim()
+			continue
+		}
 		if (isComsMessage(message)) {
 			return sawAssistant
 				? { found: true, text }
 				: { found: true, text: null }
 		}
-		const m = message as { role?: string } | null
-		if (m?.role !== "assistant") continue
-		sawAssistant = true
-		const candidate = extractMessageText(m)
-		if (candidate.trim()) text = candidate.trim()
 	}
 	return { found: true, text }
+}
+
+export const __test = {
+	assistantTextAfterComsMessage,
+	isComsMessage,
+	isManagedEndpoint,
+	messageContainsComsMessage,
+	pruneDeadEntries,
+	shouldExpireStrandedAutoReply,
+	targetSessionMatches,
+	textContainsComsMarker,
 }
 
 function compactJson(value: unknown): string {
@@ -2419,7 +2497,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	const pendingReplies = new Map<string, PendingReply>()
 	const inboundAutoReplies = new Map<string, StoredMessage>()
 	const autoReplyRunById = new Map<string, number>()
+	const autoReplyLocalReceivedAt = new Map<string, string>()
 	const pendingAutoReplyDeliveries = new Map<string, AutoReplyDelivery>()
+	const autoReplyInFlight = new Set<string>()
 	const inboxWaiters = new Set<InboxWaiter>()
 	const peerCache = new Map<string, PeerSnapshot>()
 	const activeSockets = new Set<net.Socket>()
@@ -3324,10 +3404,13 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			const inbound = inboundAutoReplies.get(params.replyTo)
 			if (inbound) {
 				inbound.auto_reply_sent = true
-				inboundAutoReplies.delete(params.replyTo)
+				clearAutoReplyRecord(inbound)
+			} else {
+				autoReplyRunById.delete(params.replyTo)
+				autoReplyLocalReceivedAt.delete(params.replyTo)
+				pendingAutoReplyDeliveries.delete(params.replyTo)
+				autoReplyInFlight.delete(params.replyTo)
 			}
-			autoReplyRunById.delete(params.replyTo)
-			pendingAutoReplyDeliveries.delete(params.replyTo)
 		}
 
 		if (params.awaitReply && pending) {
@@ -3473,7 +3556,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			nack(socket, env.msg_id, "refusing self-message")
 			return
 		}
-		if (env.target_session && env.target_session !== identity.session_id) {
+		if (!targetSessionMatches(env.target_session, identity.session_id)) {
 			nack(socket, env.msg_id, "target session mismatch")
 			return
 		}
@@ -3518,6 +3601,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 		if (env.expect_reply && env.trigger_peer) {
 			inboundAutoReplies.set(record.id, record)
+			autoReplyLocalReceivedAt.set(record.id, nowIso())
 			autoReplyRunById.set(
 				record.id,
 				localAgentWorking && !agentEnding
@@ -3544,6 +3628,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 					message: `agent-coms failed to inject inbound ask into the target session: ${errorText}`,
 					error: errorText,
 					attempts: 0,
+					created_at: nowIso(),
 				}
 				pendingAutoReplyDeliveries.set(record.id, delivery)
 				void attemptAutoReplyDelivery(
@@ -3732,7 +3817,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				message = `agent-coms response_schema error: ${parsed.error}`
 			}
 		}
-		return { message, response, error, attempts: 0 }
+		return { message, response, error, attempts: 0, created_at: nowIso() }
 	}
 
 	function persistAutoReplyState(record: StoredMessage): void {
@@ -3763,12 +3848,60 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		}
 	}
 
+	function clearAutoReplyRecord(record: StoredMessage): void {
+		inboundAutoReplies.delete(record.id)
+		autoReplyRunById.delete(record.id)
+		autoReplyLocalReceivedAt.delete(record.id)
+		pendingAutoReplyDeliveries.delete(record.id)
+		autoReplyInFlight.delete(record.id)
+	}
+
+	function nextAutoReplyRetryAt(attempts: number): string {
+		const exponent = Math.max(0, Math.min(attempts - 1, 8))
+		const delay = Math.min(
+			AUTO_REPLY_RETRY_MAX_MS,
+			AUTO_REPLY_RETRY_BASE_MS * 2 ** exponent,
+		)
+		return new Date(Date.now() + delay).toISOString()
+	}
+
+	function autoReplyRetryDue(delivery: AutoReplyDelivery): boolean {
+		return (
+			!delivery.next_attempt_at ||
+			Date.parse(delivery.next_attempt_at) <= Date.now()
+		)
+	}
+
+	function deadLetterAutoReply(
+		record: StoredMessage,
+		message: string,
+		ctx: ExtensionContext | null,
+		notifyUser: boolean,
+	): void {
+		clearAutoReplyRecord(record)
+		if (notifyUser && ctx) notify(ctx, message, "error")
+		persistAutoReplyFailure(record, message)
+	}
+
 	async function attemptAutoReplyDelivery(
 		record: StoredMessage,
 		delivery: AutoReplyDelivery,
 		ctx: ExtensionContext | null,
 		notifyOnFailure: boolean,
+		force = false,
 	): Promise<void> {
+		if (autoReplyInFlight.has(record.id)) return
+		if (!force && !autoReplyRetryDue(delivery)) return
+		if (delivery.attempts >= AUTO_REPLY_MAX_ATTEMPTS) {
+			deadLetterAutoReply(
+				record,
+				`agent-coms stopped retrying auto-reply to ${record.from.name} after ${delivery.attempts} failed attempt(s): ${delivery.last_error || "unknown error"}`,
+				ctx,
+				notifyOnFailure,
+			)
+			return
+		}
+		autoReplyInFlight.add(record.id)
 		delivery.attempts += 1
 		try {
 			await sendComsMessage({
@@ -3787,28 +3920,73 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			})
 			record.auto_reply_sent = true
 			record.unread = false
-			inboundAutoReplies.delete(record.id)
-			autoReplyRunById.delete(record.id)
-			pendingAutoReplyDeliveries.delete(record.id)
+			clearAutoReplyRecord(record)
 			persistAutoReplyState(record)
 		} catch (error) {
 			const errorText =
 				error instanceof Error ? error.message : String(error)
 			delivery.last_error = errorText
+			delivery.next_attempt_at = nextAutoReplyRetryAt(delivery.attempts)
 			pendingAutoReplyDeliveries.set(record.id, delivery)
 			const message = `agent-coms failed to auto-reply to ${record.from.name}: ${errorText}`
-			if (notifyOnFailure && ctx) notify(ctx, message, "error")
-			if (notifyOnFailure) persistAutoReplyFailure(record, message)
+			if (delivery.attempts >= AUTO_REPLY_MAX_ATTEMPTS) {
+				deadLetterAutoReply(
+					record,
+					`agent-coms stopped retrying auto-reply to ${record.from.name} after ${delivery.attempts} failed attempt(s): ${errorText}`,
+					ctx,
+					notifyOnFailure,
+				)
+			} else {
+				if (notifyOnFailure && ctx) notify(ctx, message, "error")
+				if (notifyOnFailure) persistAutoReplyFailure(record, message)
+			}
+		} finally {
+			autoReplyInFlight.delete(record.id)
+		}
+	}
+
+	async function expireStrandedAutoReplies(
+		ctx: ExtensionContext | null,
+	): Promise<void> {
+		const now = Date.now()
+		for (const record of [...inboundAutoReplies.values()]) {
+			const localReceivedAt = autoReplyLocalReceivedAt.get(record.id)
+			if (!localReceivedAt) {
+				autoReplyLocalReceivedAt.set(record.id, nowIso())
+				continue
+			}
+			if (
+				!shouldExpireStrandedAutoReply({
+					localReceivedAt,
+					nowMs: now,
+					localAgentWorking,
+					recordRunId: autoReplyRunById.get(record.id),
+					activeAgentRunSeq,
+					hasPendingDelivery: pendingAutoReplyDeliveries.has(record.id),
+					autoReplySent: record.auto_reply_sent,
+				})
+			)
+				continue
+			const delivery: AutoReplyDelivery = {
+				message:
+					"agent-coms auto-reply timeout: target session did not produce a response for this ask before the local timeout.",
+				error: "auto-reply timeout",
+				attempts: 0,
+				created_at: nowIso(),
+			}
+			pendingAutoReplyDeliveries.set(record.id, delivery)
+			await attemptAutoReplyDelivery(record, delivery, ctx, true, true)
 		}
 	}
 
 	async function retryPendingAutoReplyDeliveries(
 		ctx: ExtensionContext | null,
 	): Promise<void> {
-		if (!identity || pendingAutoReplyDeliveries.size === 0) return
+		if (!identity) return
 		if (autoReplyRetryInFlight) return autoReplyRetryInFlight
 		autoReplyRetryInFlight = (async () => {
-			for (const [id, delivery] of pendingAutoReplyDeliveries) {
+			await expireStrandedAutoReplies(ctx)
+			for (const [id, delivery] of [...pendingAutoReplyDeliveries]) {
 				const record = inboundAutoReplies.get(id)
 				if (!record || record.auto_reply_sent) {
 					pendingAutoReplyDeliveries.delete(id)
@@ -3835,10 +4013,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		}
 
 		for (const { record, text } of matched) {
-			const delivery =
-				pendingAutoReplyDeliveries.get(record.id) ??
-				makeAutoReplyDelivery(record, text)
-			await attemptAutoReplyDelivery(record, delivery, ctx, true)
+			const delivery = makeAutoReplyDelivery(record, text)
+			pendingAutoReplyDeliveries.set(record.id, delivery)
+			await attemptAutoReplyDelivery(record, delivery, ctx, true, true)
 		}
 	}
 
