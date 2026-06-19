@@ -35,7 +35,7 @@ const DEFAULT_NEXT_TIMEOUT_MS = 60 * 1000
 const CONNECT_TIMEOUT_MS = 8_000
 const PING_INTERVAL_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 15_000
-const STALE_AFTER_MS = 90_000
+const SERVER_CLOSE_TIMEOUT_MS = 1_000
 const MAX_ENVELOPE_BYTES = 256 * 1024
 const MAX_MESSAGE_CHARS = 48_000
 const MAX_INBOX_MESSAGES = 200
@@ -289,6 +289,7 @@ interface MessageEnvelope extends BaseEnvelope {
 	kind: MessageKind
 	message: string
 	thread_id: string
+	target_session?: string | null
 	reply_to?: string | null
 	expect_reply: boolean
 	trigger_peer: boolean
@@ -379,6 +380,7 @@ interface StoredMessage {
 		session_id: string
 		name: string
 		cwd: string
+		endpoint?: string
 	}
 	to: string
 	message: string
@@ -423,6 +425,25 @@ interface PendingReplySnapshot {
 	created_at: string
 	kind: MessageKind
 	preview: string
+}
+
+interface ResolvedTarget {
+	session_id: string
+	name: string
+	endpoint: string
+}
+
+interface AutoReplyDelivery {
+	message: string
+	response?: unknown
+	error: string | null
+	attempts: number
+	last_error?: string
+}
+
+interface AutoReplyCandidate {
+	record: StoredMessage
+	text: string
 }
 
 interface InboxWaiter {
@@ -707,6 +728,15 @@ function makeEndpoint(sessionId: string): string {
 	return path.join(comsHome(), "sockets", `${sessionId}.sock`)
 }
 
+function endpointExists(endpoint: string): boolean {
+	if (process.platform === "win32") return true
+	try {
+		return fs.existsSync(endpoint)
+	} catch {
+		return false
+	}
+}
+
 function roomDir(room: string): string {
 	return path.join(comsHome(), "rooms", safeSegment(room, "default"))
 }
@@ -817,13 +847,19 @@ function readRegistryEntries(room: string): RegistryEntry[] {
 	return entries
 }
 
-function unlinkManagedEndpoint(endpoint: string): void {
-	if (process.platform === "win32") return
+function isManagedEndpoint(endpoint: string): boolean {
+	if (process.platform === "win32")
+		return endpoint.startsWith("\\\\.\\pipe\\pi-agent-coms-")
 	const socketsDir = path.resolve(path.join(comsHome(), "sockets"))
 	const resolved = path.resolve(endpoint)
-	if (!resolved.startsWith(`${socketsDir}${path.sep}`)) return
+	return resolved.startsWith(`${socketsDir}${path.sep}`)
+}
+
+function unlinkManagedEndpoint(endpoint: string): void {
+	if (process.platform === "win32") return
+	if (!isManagedEndpoint(endpoint)) return
 	try {
-		fs.unlinkSync(resolved)
+		fs.unlinkSync(endpoint)
 	} catch {
 		// ignore stale socket cleanup failures
 	}
@@ -832,24 +868,17 @@ function unlinkManagedEndpoint(endpoint: string): void {
 function pruneDeadEntries(room: string): RegistryEntry[] {
 	const entries = readRegistryEntries(room)
 	const live: RegistryEntry[] = []
-	const now = Date.now()
 	for (const entry of entries) {
-		const heartbeatMs = Date.parse(
-			entry.heartbeat_at || entry.started_at || "",
-		)
-		const stale =
-			Number.isFinite(heartbeatMs) && now - heartbeatMs > STALE_AFTER_MS
-		const dead = stale || !isPidAlive(entry.pid)
-		if (dead) {
-			try {
-				fs.unlinkSync(registryPathFor(room, entry.session_id))
-			} catch {
-				// ignore
-			}
-			unlinkManagedEndpoint(entry.endpoint)
+		if (isPidAlive(entry.pid)) {
+			live.push(entry)
 			continue
 		}
-		live.push(entry)
+		try {
+			fs.unlinkSync(registryPathFor(room, entry.session_id))
+		} catch {
+			// ignore
+		}
+		unlinkManagedEndpoint(entry.endpoint)
 	}
 	return live
 }
@@ -1535,33 +1564,56 @@ function lastAssistantTextFromMessages(messages: unknown): string {
 	return text
 }
 
-function eventMessagesContainComsMessage(
+function messageContainsComsMessage(message: unknown, msgId: string): boolean {
+	const m = message as {
+		role?: string
+		customType?: string
+		content?: unknown
+		details?: unknown
+	} | null
+	if (!m) return false
+	const details = m.details as { id?: unknown } | undefined
+	if (
+		m.role === "custom" &&
+		m.customType === CUSTOM_MESSAGE_TYPE &&
+		details?.id === msgId
+	)
+		return true
+	return (
+		typeof m.content === "string" &&
+		m.content.includes(`message_id: ${msgId}`)
+	)
+}
+
+function isComsMessage(message: unknown): boolean {
+	const m = message as { role?: string; customType?: string } | null
+	return m?.role === "custom" && m.customType === CUSTOM_MESSAGE_TYPE
+}
+
+function assistantTextAfterComsMessage(
 	messages: unknown,
 	msgId: string,
-): boolean {
-	if (!Array.isArray(messages)) return false
-	for (const message of messages) {
-		const m = message as {
-			role?: string
-			customType?: string
-			content?: unknown
-			details?: unknown
-		} | null
-		if (!m) continue
-		const details = m.details as { id?: unknown } | undefined
-		if (
-			m.role === "custom" &&
-			m.customType === CUSTOM_MESSAGE_TYPE &&
-			details?.id === msgId
-		)
-			return true
-		if (
-			typeof m.content === "string" &&
-			m.content.includes(`message_id: ${msgId}`)
-		)
-			return true
+): { found: boolean; text: string | null } {
+	if (!Array.isArray(messages)) return { found: false, text: null }
+	const start = messages.findIndex((message) =>
+		messageContainsComsMessage(message, msgId),
+	)
+	if (start < 0) return { found: false, text: null }
+	let sawAssistant = false
+	let text = ""
+	for (const message of messages.slice(start + 1)) {
+		if (isComsMessage(message)) {
+			return sawAssistant
+				? { found: true, text }
+				: { found: true, text: null }
+		}
+		const m = message as { role?: string } | null
+		if (m?.role !== "assistant") continue
+		sawAssistant = true
+		const candidate = extractMessageText(m)
+		if (candidate.trim()) text = candidate.trim()
 	}
-	return false
+	return { found: true, text }
 }
 
 function compactJson(value: unknown): string {
@@ -2355,14 +2407,22 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	let pingTimer: NodeJS.Timeout | null = null
 	let widgetAnimationTimer: NodeJS.Timeout | null = null
 	let widgetSpinnerTick = 0
+	let agentRunSeq = 0
+	let activeAgentRunSeq = 0
 	let localAgentWorking = false
+	let agentEnding = false
 	let shuttingDown = false
+	let rebindInFlight: Promise<void> | null = null
+	let autoReplyRetryInFlight: Promise<void> | null = null
 
 	const inbox: StoredMessage[] = []
 	const pendingReplies = new Map<string, PendingReply>()
 	const inboundAutoReplies = new Map<string, StoredMessage>()
+	const autoReplyRunById = new Map<string, number>()
+	const pendingAutoReplyDeliveries = new Map<string, AutoReplyDelivery>()
 	const inboxWaiters = new Set<InboxWaiter>()
 	const peerCache = new Map<string, PeerSnapshot>()
+	const activeSockets = new Set<net.Socket>()
 	let widgetMode: WidgetMode = normalizeWidgetMode(
 		process.env.PI_AGENT_COMS_WIDGET,
 	)
@@ -3152,15 +3212,36 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	}
 
 	async function sendComsMessage(
-		params: MessageParamsType & { response?: unknown; error?: string | null },
+		params: MessageParamsType & {
+			response?: unknown
+			error?: string | null
+			targetEndpoint?: string
+			targetName?: string
+			targetSessionId?: string
+		},
 	): Promise<{
 		msg_id: string
 		thread_id: string
-		target: RegistryEntry
+		target: ResolvedTarget
 		reply?: ReplyResult
 	}> {
 		if (!identity) throw new Error("agent-coms is not initialized.")
-		const target = resolveTarget(params.target)
+		const registryTarget = resolveTarget(params.target)
+		const directEndpoint =
+			params.targetEndpoint && isManagedEndpoint(params.targetEndpoint)
+				? params.targetEndpoint
+				: undefined
+		const directTarget: ResolvedTarget | null = directEndpoint
+			? {
+					session_id:
+						params.targetSessionId ??
+						registryTarget?.session_id ??
+						params.target,
+					name: params.targetName ?? registryTarget?.name ?? params.target,
+					endpoint: directEndpoint,
+				}
+			: null
+		const target: ResolvedTarget | null = directTarget ?? registryTarget
 		if (!target)
 			throw new Error(
 				`No peer named/session '${params.target}' in room ${identity.room}.`,
@@ -3173,6 +3254,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			params.triggerPeer ?? (kind === "ask" || params.awaitReply === true)
 		const msgId = randomId(12)
 		const threadId = params.threadId || params.replyTo || msgId
+		const pendingTimeoutMs = params.awaitReply ? params.timeoutMs : undefined
 		const pending = expectReply
 			? createPending(
 					msgId,
@@ -3180,7 +3262,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 					target.name,
 					kind,
 					previewText(params.message, 140),
-					params.timeoutMs,
+					pendingTimeoutMs,
 				)
 			: null
 
@@ -3198,6 +3280,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			kind,
 			message: truncateMessage(params.message),
 			thread_id: threadId,
+			target_session: target.session_id,
 			reply_to: params.replyTo ?? null,
 			expect_reply: expectReply,
 			trigger_peer: triggerPeer,
@@ -3206,17 +3289,35 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			error: params.error ?? null,
 		}
 
-		try {
-			await sendEnvelope(target.endpoint, env)
-		} catch (error) {
+		const endpoints = [target.endpoint]
+		if (
+			registryTarget &&
+			registryTarget.endpoint !== target.endpoint &&
+			isManagedEndpoint(registryTarget.endpoint)
+		)
+			endpoints.push(registryTarget.endpoint)
+		let lastError: unknown
+		for (const endpoint of endpoints) {
+			try {
+				await sendEnvelope(endpoint, env)
+				lastError = undefined
+				break
+			} catch (error) {
+				lastError = error
+			}
+		}
+		if (lastError) {
 			if (pending) {
 				settlePending(msgId, {
 					status: "error",
-					error: error instanceof Error ? error.message : String(error),
+					error:
+						lastError instanceof Error
+							? lastError.message
+							: String(lastError),
 					thread_id: threadId,
 				})
 			}
-			throw error
+			throw lastError
 		}
 
 		if (kind === "reply" && params.replyTo) {
@@ -3225,6 +3326,8 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				inbound.auto_reply_sent = true
 				inboundAutoReplies.delete(params.replyTo)
 			}
+			autoReplyRunById.delete(params.replyTo)
+			pendingAutoReplyDeliveries.delete(params.replyTo)
 		}
 
 		if (params.awaitReply && pending) {
@@ -3255,7 +3358,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	async function replyToMessage(
 		params: ReplyParamsType,
-	): Promise<{ msg_id: string; thread_id: string; target: RegistryEntry }> {
+	): Promise<{ msg_id: string; thread_id: string; target: ResolvedTarget }> {
 		const reference = findInboxReference(params)
 		const target = params.target || reference?.from.session_id
 		if (!target)
@@ -3270,8 +3373,69 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			threadId: params.threadId || reference?.thread_id || params.replyTo,
 			expectReply: false,
 			triggerPeer: false,
+			targetEndpoint: reference?.from.endpoint,
+			targetName: reference?.from.name,
+			targetSessionId: reference?.from.session_id,
 		})
 		return result
+	}
+
+	async function closeServer(serverToClose: net.Server): Promise<void> {
+		await new Promise<void>((resolve) => {
+			let settled = false
+			const finish = () => {
+				if (settled) return
+				settled = true
+				clearTimeout(timer)
+				resolve()
+			}
+			const timer = setTimeout(() => {
+				for (const socket of activeSockets) {
+					try {
+						socket.destroy()
+					} catch {
+						// ignore
+					}
+				}
+				finish()
+			}, SERVER_CLOSE_TIMEOUT_MS)
+			try {
+				timer.unref()
+			} catch {
+				// ignore
+			}
+			try {
+				serverToClose.close(finish)
+			} catch {
+				finish()
+			}
+		})
+	}
+
+	async function ensureEndpointBound(): Promise<void> {
+		if (!identity || shuttingDown || endpointExists(identity.endpoint)) return
+		if (rebindInFlight) return rebindInFlight
+
+		const endpoint = identity.endpoint
+		rebindInFlight = (async () => {
+			const previousServer = server
+			server = null
+			if (previousServer) await closeServer(previousServer)
+			if (!identity || identity.endpoint !== endpoint || shuttingDown) return
+			const reboundServer = await bindEndpoint(endpoint, connectionHandler)
+			if (!identity || identity.endpoint !== endpoint || shuttingDown) {
+				await closeServer(reboundServer)
+				return
+			}
+			server = reboundServer
+			const message =
+				"agent-coms transport socket was missing; rebound local endpoint"
+			if (currentCtx) notify(currentCtx, message, "warning")
+			else console.log(message)
+		})().finally(() => {
+			rebindInFlight = null
+		})
+		return rebindInFlight
 	}
 
 	function handlePing(socket: net.Socket, env: PingEnvelope): void {
@@ -3309,6 +3473,10 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			nack(socket, env.msg_id, "refusing self-message")
 			return
 		}
+		if (env.target_session && env.target_session !== identity.session_id) {
+			nack(socket, env.msg_id, "target session mismatch")
+			return
+		}
 
 		const record: StoredMessage = {
 			id: safeDisplayText(env.msg_id, 80),
@@ -3318,6 +3486,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				session_id: safeDisplayText(env.sender_session, 80),
 				name: safeDisplayName(env.sender_name),
 				cwd: safeDisplayText(env.sender_cwd, 500),
+				endpoint: safeDisplayText(env.sender_endpoint, 500),
 			},
 			to: identity.name,
 			message: safeDisplayText(
@@ -3349,6 +3518,12 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 		if (env.expect_reply && env.trigger_peer) {
 			inboundAutoReplies.set(record.id, record)
+			autoReplyRunById.set(
+				record.id,
+				localAgentWorking && !agentEnding
+					? activeAgentRunSeq
+					: agentRunSeq + 1,
+			)
 		}
 
 		try {
@@ -3361,8 +3536,23 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				},
 				{ deliverAs: "followUp", triggerTurn: Boolean(env.trigger_peer) },
 			)
-		} catch {
-			// If the visible message cannot be injected, keep it in inbox and let sender know it was received.
+		} catch (error) {
+			const errorText =
+				error instanceof Error ? error.message : String(error)
+			if (env.expect_reply && env.trigger_peer) {
+				const delivery: AutoReplyDelivery = {
+					message: `agent-coms failed to inject inbound ask into the target session: ${errorText}`,
+					error: errorText,
+					attempts: 0,
+				}
+				pendingAutoReplyDeliveries.set(record.id, delivery)
+				void attemptAutoReplyDelivery(
+					record,
+					delivery,
+					currentCtx,
+					Boolean(currentCtx),
+				)
+			}
 		}
 
 		if (currentCtx?.hasUI) {
@@ -3379,6 +3569,8 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	}
 
 	function connectionHandler(socket: net.Socket): void {
+		activeSockets.add(socket)
+		socket.once("close", () => activeSockets.delete(socket))
 		let buffer = ""
 		let done = false
 		const onData = (chunk: Buffer) => {
@@ -3430,6 +3622,13 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	function writeHeartbeat(): void {
 		if (!identity) return
+		if (!endpointExists(identity.endpoint)) {
+			void ensureEndpointBound().catch((error) => {
+				const message = `agent-coms failed to rebind local endpoint: ${error instanceof Error ? error.message : String(error)}`
+				if (currentCtx) notify(currentCtx, message, "error")
+				else console.log(message)
+			})
+		}
 		const next: RegistryEntry = {
 			session_id: identity.session_id,
 			name: identity.name,
@@ -3456,21 +3655,13 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		} catch {
 			// best effort; next heartbeat may self-heal
 		}
+		void retryPendingAutoReplyDeliveries(currentCtx).catch(() => {})
 	}
 
-	async function autoReplyFromAgentEnd(
-		event: unknown,
+	function autoReplyTextFromEvent(
+		eventMessages: unknown,
 		ctx: ExtensionContext,
-	): Promise<void> {
-		if (!identity || inboundAutoReplies.size === 0) return
-		const eventMessages = (event as { messages?: unknown })?.messages
-		const matched = [...inboundAutoReplies.values()].filter(
-			(record) =>
-				!record.auto_reply_sent &&
-				eventMessagesContainComsMessage(eventMessages, record.id),
-		)
-		if (matched.length === 0) return
-
+	): string {
 		let text = lastAssistantTextFromMessages(eventMessages)
 		if (!text) {
 			for (const entry of ctx.sessionManager.getBranch()) {
@@ -3483,64 +3674,171 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				}
 			}
 		}
-		if (!text)
-			text =
-				"(agent-coms: target agent completed a turn but produced no text response)"
+		return text || noTextAutoReplyMessage()
+	}
 
-		for (const next of matched) {
-			let replyMessage = text
-			let response: unknown
-			let error: string | null = null
-			if (
-				next.response_schema !== undefined &&
-				next.response_schema !== null
-			) {
-				const parsed = parseStructuredResponse(text)
-				if (parsed.ok === true) {
-					response = parsed.response
-					replyMessage = parsed.message
-				} else {
-					error = parsed.error
-					replyMessage = `agent-coms response_schema error: ${parsed.error}`
+	function noTextAutoReplyMessage(): string {
+		return "(agent-coms: target agent completed a turn but produced no text response)"
+	}
+
+	function autoReplyCandidates(
+		eventMessages: unknown,
+		ctx: ExtensionContext,
+	): AutoReplyCandidate[] {
+		const confirmed: AutoReplyCandidate[] = []
+		const fallback: StoredMessage[] = []
+		for (const record of inboundAutoReplies.values()) {
+			if (record.auto_reply_sent) continue
+			const after = assistantTextAfterComsMessage(eventMessages, record.id)
+			if (after.found) {
+				if (after.text !== null) {
+					confirmed.push({
+						record,
+						text: after.text || noTextAutoReplyMessage(),
+					})
 				}
+				continue
 			}
-			try {
-				await sendComsMessage({
-					target: next.from.session_id,
-					message: replyMessage,
-					kind: "reply",
-					replyTo: next.id,
-					threadId: next.thread_id,
-					expectReply: false,
-					triggerPeer: false,
-					response,
-					error,
-				})
-				next.auto_reply_sent = true
-				next.unread = false
-				if (persistInboxEnabled()) {
-					try {
-						pi.appendEntry(CUSTOM_ENTRY_TYPE, next)
-					} catch {
-						// best effort
-					}
-				}
-				inboundAutoReplies.delete(next.id)
-			} catch (error) {
-				if (!persistInboxEnabled()) continue
-				try {
-					pi.appendEntry(CUSTOM_ENTRY_TYPE, {
-						...next,
-						id: randomId(12),
-						kind: "status",
-						message: `agent-coms failed to auto-reply to ${next.from.name}: ${error instanceof Error ? error.message : String(error)}`,
-						unread: true,
-						received_at: nowIso(),
-					} satisfies StoredMessage)
-				} catch {
-					// ignore
-				}
+			if (autoReplyRunById.get(record.id) === activeAgentRunSeq)
+				fallback.push(record)
+		}
+		if (confirmed.length > 0) return confirmed
+		if (fallback.length !== 1) return []
+		return [
+			{
+				record: fallback[0],
+				text: autoReplyTextFromEvent(eventMessages, ctx),
+			},
+		]
+	}
+
+	function makeAutoReplyDelivery(
+		record: StoredMessage,
+		text: string,
+	): AutoReplyDelivery {
+		let message = text
+		let response: unknown
+		let error: string | null = null
+		if (
+			record.response_schema !== undefined &&
+			record.response_schema !== null
+		) {
+			const parsed = parseStructuredResponse(text)
+			if (parsed.ok === true) {
+				response = parsed.response
+				message = parsed.message
+			} else {
+				error = parsed.error
+				message = `agent-coms response_schema error: ${parsed.error}`
 			}
+		}
+		return { message, response, error, attempts: 0 }
+	}
+
+	function persistAutoReplyState(record: StoredMessage): void {
+		if (!persistInboxEnabled()) return
+		try {
+			pi.appendEntry(CUSTOM_ENTRY_TYPE, record)
+		} catch {
+			// best effort
+		}
+	}
+
+	function persistAutoReplyFailure(
+		record: StoredMessage,
+		message: string,
+	): void {
+		if (!persistInboxEnabled()) return
+		try {
+			pi.appendEntry(CUSTOM_ENTRY_TYPE, {
+				...record,
+				id: randomId(12),
+				kind: "status",
+				message,
+				unread: true,
+				received_at: nowIso(),
+			} satisfies StoredMessage)
+		} catch {
+			// ignore
+		}
+	}
+
+	async function attemptAutoReplyDelivery(
+		record: StoredMessage,
+		delivery: AutoReplyDelivery,
+		ctx: ExtensionContext | null,
+		notifyOnFailure: boolean,
+	): Promise<void> {
+		delivery.attempts += 1
+		try {
+			await sendComsMessage({
+				target: record.from.session_id,
+				message: delivery.message,
+				kind: "reply",
+				replyTo: record.id,
+				threadId: record.thread_id,
+				expectReply: false,
+				triggerPeer: false,
+				response: delivery.response,
+				error: delivery.error,
+				targetEndpoint: record.from.endpoint,
+				targetName: record.from.name,
+				targetSessionId: record.from.session_id,
+			})
+			record.auto_reply_sent = true
+			record.unread = false
+			inboundAutoReplies.delete(record.id)
+			autoReplyRunById.delete(record.id)
+			pendingAutoReplyDeliveries.delete(record.id)
+			persistAutoReplyState(record)
+		} catch (error) {
+			const errorText =
+				error instanceof Error ? error.message : String(error)
+			delivery.last_error = errorText
+			pendingAutoReplyDeliveries.set(record.id, delivery)
+			const message = `agent-coms failed to auto-reply to ${record.from.name}: ${errorText}`
+			if (notifyOnFailure && ctx) notify(ctx, message, "error")
+			if (notifyOnFailure) persistAutoReplyFailure(record, message)
+		}
+	}
+
+	async function retryPendingAutoReplyDeliveries(
+		ctx: ExtensionContext | null,
+	): Promise<void> {
+		if (!identity || pendingAutoReplyDeliveries.size === 0) return
+		if (autoReplyRetryInFlight) return autoReplyRetryInFlight
+		autoReplyRetryInFlight = (async () => {
+			for (const [id, delivery] of pendingAutoReplyDeliveries) {
+				const record = inboundAutoReplies.get(id)
+				if (!record || record.auto_reply_sent) {
+					pendingAutoReplyDeliveries.delete(id)
+					continue
+				}
+				await attemptAutoReplyDelivery(record, delivery, ctx, false)
+			}
+		})().finally(() => {
+			autoReplyRetryInFlight = null
+		})
+		return autoReplyRetryInFlight
+	}
+
+	async function autoReplyFromAgentEnd(
+		event: unknown,
+		ctx: ExtensionContext,
+	): Promise<void> {
+		if (!identity || inboundAutoReplies.size === 0) return
+		const eventMessages = (event as { messages?: unknown })?.messages
+		const matched = autoReplyCandidates(eventMessages, ctx)
+		if (matched.length === 0) {
+			await retryPendingAutoReplyDeliveries(ctx)
+			return
+		}
+
+		for (const { record, text } of matched) {
+			const delivery =
+				pendingAutoReplyDeliveries.get(record.id) ??
+				makeAutoReplyDelivery(record, text)
+			await attemptAutoReplyDelivery(record, delivery, ctx, true)
 		}
 	}
 
@@ -3551,16 +3849,22 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		if (pingTimer) clearInterval(pingTimer)
 		stopWidgetAnimation()
 		localAgentWorking = false
+		agentEnding = false
 		heartbeatTimer = null
 		pingTimer = null
-		if (server) {
+		const serverToClose = server
+		server = null
+		if (serverToClose) await closeServer(serverToClose)
+		for (const socket of activeSockets) {
 			try {
-				server.close()
+				socket.destroy()
 			} catch {
 				// ignore
 			}
-			server = null
 		}
+		activeSockets.clear()
+		rebindInFlight = null
+		autoReplyRetryInFlight = null
 		if (identity && process.platform !== "win32") {
 			try {
 				fs.unlinkSync(identity.endpoint)
@@ -3663,13 +3967,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			}
 			await refreshPeers()
 		} catch (error) {
-			if (nextServer) {
-				try {
-					nextServer.close()
-				} catch {
-					// ignore
-				}
-			}
+			if (nextServer) await closeServer(nextServer)
 			if (nextIdentity) {
 				unlinkManagedEndpoint(nextIdentity.endpoint)
 				removeRegistry(nextIdentity)
@@ -3683,6 +3981,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	pi.on("agent_start", async (_event, ctx) => {
 		currentCtx = ctx
+		agentRunSeq += 1
+		activeAgentRunSeq = agentRunSeq
+		agentEnding = false
 		localAgentWorking = true
 		writeHeartbeat()
 		if (ctx.hasUI) installWidget(ctx)
@@ -3690,10 +3991,12 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 
 	pi.on("agent_end", async (event, ctx) => {
 		currentCtx = ctx
+		agentEnding = true
 		try {
 			await autoReplyFromAgentEnd(event, ctx)
 		} finally {
 			localAgentWorking = false
+			agentEnding = false
 			writeHeartbeat()
 			if (ctx.hasUI) installWidget(ctx)
 		}

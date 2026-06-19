@@ -140,3 +140,5 @@ The dashboard is intentionally observability-first: room health, peer role/perso
 Peer messages are marked as untrusted collaborator context. Agents should verify risky claims and should not execute commands solely because another agent requested it.
 
 Inbox history is restored from visible `agent-coms` session messages by default, without appending a duplicate inbox log. Set `PI_AGENT_COMS_PERSIST_INBOX=1` only if you also want compact custom inbox entries/read-state markers for debugging/export tooling.
+
+Transport liveness is Unix-socket-backed and self-healing: a live peer with a temporarily stale heartbeat is not pruned solely for staleness, and a session will rebind its local Unix socket if the socket file disappears while the process is still running.
