@@ -12,6 +12,8 @@ type CodeBlock = {
 	language: string
 	info: string
 	content: string
+	startLine: number
+	endLine: number
 }
 
 function clipboardCandidates(): ClipboardCandidate[] {
@@ -65,30 +67,44 @@ async function copyToSystemClipboard(text: string): Promise<boolean> {
 }
 
 function maybeExtractSingleMarkdownFence(text: string): string {
-	const fenceRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g
-	const matches = Array.from(text.matchAll(fenceRegex))
-	if (matches.length !== 1) return text
+	const blocks = parseCodeBlocks(text)
+	if (blocks.length !== 1) return text
 
-	const match = matches[0]
-	const language = (match[1] || "").toLowerCase()
-	if (language && language !== "md" && language !== "markdown") {
+	const block = blocks[0]
+	if (
+		block.language &&
+		block.language !== "md" &&
+		block.language !== "markdown"
+	) {
 		return text
 	}
 
-	const fullFence = match[0]
-	const outside = text.replace(fullFence, "").trim()
+	const lines = text.split(/\r?\n/)
+	const outside = [
+		lines.slice(0, block.startLine).join("\n").trim(),
+		lines
+			.slice(block.endLine + 1)
+			.join("\n")
+			.trim(),
+	]
+		.filter(Boolean)
+		.join("\n")
 	const outsideLineCount = outside ? outside.split(/\r?\n/).length : 0
 
 	// Heuristic: if the response is mostly a single markdown fence with a short pre/postamble,
 	// copy just the fenced markdown body.
 	if (!outside || (outside.length <= 180 && outsideLineCount <= 3)) {
-		return (match[2] || "").replace(/\s+$/, "")
+		return block.content.replace(/\s+$/, "")
 	}
 
 	return text
 }
 
-function extractLastAssistantMarkdown(ctx: any): string | undefined {
+function extractLastAssistantMarkdown(
+	ctx: any,
+	options: { unwrapSingleMarkdownFence?: boolean } = {},
+): string | undefined {
+	const unwrapSingleMarkdownFence = options.unwrapSingleMarkdownFence ?? true
 	const branch = ctx.sessionManager.getBranch()
 
 	for (let i = branch.length - 1; i >= 0; i--) {
@@ -101,7 +117,11 @@ function extractLastAssistantMarkdown(ctx: any): string | undefined {
 		const content = message.content
 		if (typeof content === "string") {
 			const text = content.trim()
-			if (text) return maybeExtractSingleMarkdownFence(text)
+			if (text) {
+				return unwrapSingleMarkdownFence
+					? maybeExtractSingleMarkdownFence(text)
+					: text
+			}
 			continue
 		}
 
@@ -117,7 +137,11 @@ function extractLastAssistantMarkdown(ctx: any): string | undefined {
 			.join("\n\n")
 			.trim()
 
-		if (markdown) return maybeExtractSingleMarkdownFence(markdown)
+		if (markdown) {
+			return unwrapSingleMarkdownFence
+				? maybeExtractSingleMarkdownFence(markdown)
+				: markdown
+		}
 	}
 
 	return undefined
@@ -131,9 +155,11 @@ function parseCodeBlocks(markdown: string): CodeBlock[] {
 		markerLength: number
 		info: string
 		contentLines: string[]
+		startLine: number
 	} | null = null
 
-	for (const line of lines) {
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+		const line = lines[lineIndex]
 		if (!active) {
 			const opener = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
 			if (!opener) continue
@@ -148,6 +174,7 @@ function parseCodeBlocks(markdown: string): CodeBlock[] {
 				markerLength: marker.length,
 				info,
 				contentLines: [],
+				startLine: lineIndex,
 			}
 			continue
 		}
@@ -165,6 +192,8 @@ function parseCodeBlocks(markdown: string): CodeBlock[] {
 					language,
 					info: active.info,
 					content: active.contentLines.join("\n"),
+					startLine: active.startLine,
+					endLine: lineIndex,
 				})
 				active = null
 				continue
@@ -339,7 +368,9 @@ export default function (pi: ExtensionAPI) {
 		description: "Copy a fenced code block from the last assistant response",
 		getArgumentCompletions: copyBlockCompletions,
 		handler: async (args, ctx) => {
-			const markdown = extractLastAssistantMarkdown(ctx)
+			const markdown = extractLastAssistantMarkdown(ctx, {
+				unwrapSingleMarkdownFence: false,
+			})
 			if (!markdown) {
 				ctx.ui.notify("No assistant response found to inspect.", "warning")
 				return
