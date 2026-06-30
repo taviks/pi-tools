@@ -56,7 +56,9 @@ The root package contains the integrated daily-use extensions: notifications/edi
 
 The package also ships light variants for the custom dark themes (`nord-light`, `tokyo-night-light`). On macOS startup/reload, the system-theme extension switches managed pairs (`nord`/`nord-light`, `tokyo-night`/`tokyo-night-light`) to match the system dark/light appearance without changing the saved `settings.json` theme.
 
-The guard extension still confirms destructive shell actions, but common temp-scratch operations are exempt when every target stays inside a real temp root (`os.tmpdir()`, `/tmp`, or `/private/tmp`). This includes `rm -rf`, recursive `chmod`, and recursive `chown` against literal temp paths or shell variables assigned from `mktemp`/safe temp paths; temp-root deletion, broad globs, symlink escapes, `sudo`, and non-temp targets remain guarded.
+The guard extension still confirms destructive shell actions, but common temp-scratch operations are exempt when every target stays inside a real temp root (`os.tmpdir()`, `/tmp`, or `/private/tmp`). This includes `rm -rf`, recursive `chmod`, and recursive `chown` against literal temp paths or shell variables assigned from `mktemp`/safe temp paths; temp-root deletion, broad globs, symlink escapes, `sudo`, and non-temp targets remain guarded. Guard approvals and hard blocks also emit the shared OS notification event so you notice a blocked agent even from another workspace.
+
+Ready notifications prefer terminal-native toast protocols when available (Ghostty/iTerm/WezTerm/Kitty), fall back to platform notifiers elsewhere, and treat terminal focus tracking as best-effort so missing or stale focus signals do not silently suppress completion notifications.
 
 Goal loop can be started explicitly with `/goal <objective>`. It also auto-starts from a `Goal:`/`goal:` prompt header when no goal is already active; if the header has no same-line text, the next non-empty line block is used as the objective.
 

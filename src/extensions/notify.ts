@@ -24,6 +24,7 @@ import {
 	writeNotifyDefaults,
 	type NotifyConfig,
 } from "../lib/notify-state"
+import { NOTIFY_FIRE_EVENT, parseNotifyFireEvent } from "../lib/notify-events"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const COMMAND_CHOICES = [
@@ -43,6 +44,8 @@ const TOAST_TITLE = "Pi done"
 const ERROR_TOAST_TITLE = "Pi error"
 const TOAST_RESPONSE_PREVIEW_MAX = 120
 const NOTIFICATION_SETTLE_DELAY_MS = 150
+const COMPACTION_NOTIFICATION_GRACE_MS = 5000
+const FOCUS_SIGNAL_STALE_MS = 5 * 60 * 1000
 
 interface RetrySettings {
 	enabled: boolean
@@ -104,16 +107,52 @@ function windowsToastScript(title: string, body: string): string {
 	].join("; ")
 }
 
+function sanitizeOscText(value: string): string {
+	return value
+		.replace(/[\u0000-\u001f\u007f;]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+}
+
 function notifyOSC777(title: string, body: string): void {
-	process.stdout.write(`\x1b]777;notify;${title};${body}\x07`)
+	process.stdout.write(
+		`\x1b]777;notify;${sanitizeOscText(title)};${sanitizeOscText(body)}\x07`,
+	)
 }
 
 function notifyOSC99(title: string, body: string): void {
-	process.stdout.write(`\x1b]99;i=pi-notify:d=0;${title}\x1b\\`)
-	process.stdout.write(`\x1b]99;i=pi-notify:p=body;${body}\x1b\\`)
+	process.stdout.write(
+		`\x1b]99;i=pi-notify:d=0;${sanitizeOscText(title)}\x1b\\`,
+	)
+	process.stdout.write(
+		`\x1b]99;i=pi-notify:p=body;${sanitizeOscText(body)}\x1b\\`,
+	)
+}
+
+function supportsTerminalToast(): boolean {
+	const term = process.env.TERM?.toLowerCase() ?? ""
+	const termProgram = process.env.TERM_PROGRAM?.toLowerCase() ?? ""
+	return Boolean(
+		process.env.KITTY_WINDOW_ID ||
+		process.env.GHOSTTY_RESOURCES_DIR ||
+		process.env.WEZTERM_EXECUTABLE ||
+		process.env.WEZTERM_PANE ||
+		process.env.ITERM_SESSION_ID ||
+		term.includes("ghostty") ||
+		term.includes("kitty") ||
+		term.includes("wezterm") ||
+		termProgram.includes("ghostty") ||
+		termProgram.includes("iterm") ||
+		termProgram.includes("wezterm"),
+	)
 }
 
 function sendToast(title: string, body: string): void {
+	if (supportsTerminalToast()) {
+		sendTerminalToast(title, body)
+		return
+	}
+
 	if (process.platform === "darwin") {
 		execDetached(
 			"osascript",
@@ -612,12 +651,18 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	let lastEnabledConfig: NotifyConfig = hasAnyNotifyChannel(current)
 		? current
 		: defaults
-	let terminalFocused = true
+	let terminalFocused = false
+	let focusTrackingActive = false
+	let focusSignalReceived = false
+	let lastFocusSignalAt = 0
 	let cleanupFocusTracking: (() => void) | undefined
 	let retryAttempt = 0
 	let overflowRecoveryAttempted = false
 	let notificationGeneration = 0
 	let pendingNotificationTimer: ReturnType<typeof setTimeout> | undefined
+	let pendingCompactionNotificationTimer:
+		| ReturnType<typeof setTimeout>
+		| undefined
 	let pendingNotification: { title: string; body: string } | undefined
 	let pendingNotificationAfterCompaction:
 		| { title: string; body: string }
@@ -655,10 +700,24 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		)
 	}
 
+	const shouldSuppressForRecentFocus = () =>
+		focusTrackingActive &&
+		focusSignalReceived &&
+		terminalFocused &&
+		Date.now() - lastFocusSignalAt < FOCUS_SIGNAL_STALE_MS
+
+	const clearPendingCompactionNotificationTimer = () => {
+		if (pendingCompactionNotificationTimer) {
+			clearTimeout(pendingCompactionNotificationTimer)
+		}
+		pendingCompactionNotificationTimer = undefined
+	}
+
 	const clearPendingNotification = () => {
 		notificationGeneration++
 		if (pendingNotificationTimer) clearTimeout(pendingNotificationTimer)
 		pendingNotificationTimer = undefined
+		clearPendingCompactionNotificationTimer()
 		pendingNotification = undefined
 		pendingNotificationAfterCompaction = undefined
 	}
@@ -677,7 +736,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 			if (token !== notificationGeneration) return
 			if (
 				!ctx.hasUI ||
-				terminalFocused ||
+				shouldSuppressForRecentFocus() ||
 				!ctx.isIdle() ||
 				ctx.hasPendingMessages()
 			)
@@ -686,7 +745,24 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		}, NOTIFICATION_SETTLE_DELAY_MS)
 	}
 
+	const scheduleNotificationAfterCompaction = (
+		ctx: ExtensionContext,
+		title: string,
+		body: string,
+	) => {
+		pendingNotificationAfterCompaction = { title, body }
+		clearPendingCompactionNotificationTimer()
+		pendingCompactionNotificationTimer = setTimeout(() => {
+			pendingCompactionNotificationTimer = undefined
+			const notification = pendingNotificationAfterCompaction
+			pendingNotificationAfterCompaction = undefined
+			if (notification)
+				scheduleNotification(ctx, notification.title, notification.body)
+		}, COMPACTION_NOTIFICATION_GRACE_MS)
+	}
+
 	const deferPendingNotificationUntilCompactionFinishes = () => {
+		clearPendingCompactionNotificationTimer()
 		if (!pendingNotification) return
 		pendingNotificationAfterCompaction = pendingNotification
 		if (pendingNotificationTimer) clearTimeout(pendingNotificationTimer)
@@ -902,19 +978,31 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		)
 	}
 
+	pi.events.on(NOTIFY_FIRE_EVENT, (data) => {
+		const event = parseNotifyFireEvent(data)
+		if (!event) return
+		fireNotification(current, event.title, event.body)
+	})
+
 	pi.on("session_start", (_event, ctx) => {
 		installSlashCommandArgumentAutocomplete(ctx, "notify", commandItems)
 		defaults = readNotifyDefaults()
 		current = initializeNotifyCurrentState(defaults)
 		if (hasAnyNotifyChannel(current)) lastEnabledConfig = current
-		terminalFocused = true
+		terminalFocused = false
+		focusTrackingActive = false
+		focusSignalReceived = false
+		lastFocusSignalAt = 0
 		resetCompletionTracking()
 		cleanupFocusTracking?.()
 		cleanupFocusTracking = ctx.hasUI
 			? enableTerminalFocusTracking((focused) => {
 					terminalFocused = focused
+					focusSignalReceived = true
+					lastFocusSignalAt = Date.now()
 				})
 			: undefined
+		focusTrackingActive = cleanupFocusTracking !== undefined
 		emitState()
 	})
 
@@ -922,7 +1010,10 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		clearPendingNotification()
 		cleanupFocusTracking?.()
 		cleanupFocusTracking = undefined
-		terminalFocused = true
+		terminalFocused = false
+		focusTrackingActive = false
+		focusSignalReceived = false
+		lastFocusSignalAt = 0
 	})
 
 	pi.on("message_start", (event) => {
@@ -930,6 +1021,9 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	})
 
 	pi.on("agent_start", () => {
+		if (focusTrackingActive && focusSignalReceived && terminalFocused) {
+			lastFocusSignalAt = Date.now()
+		}
 		clearPendingNotification()
 	})
 
@@ -938,6 +1032,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	})
 
 	pi.on("session_compact", (_event, ctx) => {
+		clearPendingCompactionNotificationTimer()
 		const notification = pendingNotificationAfterCompaction
 		pendingNotificationAfterCompaction = undefined
 		if (notification)
@@ -945,7 +1040,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	})
 
 	pi.on("agent_end", async (event, ctx: ExtensionContext) => {
-		if (!ctx.hasUI || terminalFocused) return
+		if (!ctx.hasUI || shouldSuppressForRecentFocus()) return
 
 		const assistant = lastAssistantMessage(event.messages)
 		if (assistant?.stopReason === "aborted") return
@@ -965,7 +1060,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		overflowRecoveryAttempted = false
 		const body = toastBody(ctx, event as { messages?: unknown })
 		if (shouldDeferForLikelyCompaction(assistant, ctx)) {
-			pendingNotificationAfterCompaction = { title: TOAST_TITLE, body }
+			scheduleNotificationAfterCompaction(ctx, TOAST_TITLE, body)
 			return
 		}
 		scheduleNotification(ctx, TOAST_TITLE, body)

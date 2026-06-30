@@ -6,6 +6,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent"
+import { NOTIFY_FIRE_EVENT } from "../lib/notify-events"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 interface GuardState {
@@ -146,6 +147,29 @@ function truncate(value: string, max = 600): string {
 
 function getCwd(ctx: ExtensionContext | ExtensionCommandContext): string {
 	return typeof ctx.cwd === "string" && ctx.cwd ? ctx.cwd : process.cwd()
+}
+
+function cwdSegment(cwd: string): string {
+	const trimmed = cwd.replace(/[\\/]+$/, "")
+	const home = os.homedir().replace(/[\\/]+$/, "")
+	if (home && trimmed === home) return "~"
+	return path.basename(trimmed) || trimmed || cwd || "pi"
+}
+
+function emitGuardNotification(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	title: string,
+	lines: string[],
+): void {
+	try {
+		pi.events.emit(NOTIFY_FIRE_EVENT, {
+			title,
+			body: [cwdSegment(getCwd(ctx)), ...lines.filter(Boolean)].join("\n"),
+		})
+	} catch {
+		// Guard decisions must not depend on the optional notification bridge.
+	}
 }
 
 function stripMatchingQuotes(value: string): string {
@@ -609,11 +633,13 @@ function inspectFreezeBoundary(
 }
 
 async function confirmOrBlock(
+	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	title: string,
 	body: string,
 	noUiReason: string,
 ) {
+	emitGuardNotification(pi, ctx, "Pi guard needs approval", [body])
 	if (!ctx.hasUI) return { block: true, reason: noUiReason }
 	const choice = await ctx.ui.select(
 		`${title}\n\n${body}\n\nAllow this once?`,
@@ -650,6 +676,7 @@ export default function guardExtension(pi: ExtensionAPI) {
 			const finding = inspectCommand(command, cwd)
 			if (!finding) return undefined
 			return confirmOrBlock(
+				pi,
 				ctx,
 				"⚠️ Guard: destructive command",
 				`Reason: ${finding.reason}\nCommand:\n${truncate(command)}`,
@@ -663,6 +690,10 @@ export default function guardExtension(pi: ExtensionAPI) {
 
 			const protectedFinding = inspectProtectedPath(targetPath, cwd)
 			if (protectedFinding) {
+				emitGuardNotification(pi, ctx, "Pi guard blocked", [
+					`${event.toolName}: ${truncate(targetPath, 240)}`,
+					protectedFinding.reason,
+				])
 				if (ctx.hasUI)
 					ctx.ui.notify(
 						`Guard blocked ${event.toolName}: ${targetPath}`,
@@ -673,6 +704,10 @@ export default function guardExtension(pi: ExtensionAPI) {
 
 			const tempSymlinkFinding = inspectTempSymlinkEscape(targetPath, cwd)
 			if (tempSymlinkFinding) {
+				emitGuardNotification(pi, ctx, "Pi guard blocked", [
+					`temp symlink escape: ${truncate(targetPath, 240)}`,
+					tempSymlinkFinding.reason,
+				])
 				if (ctx.hasUI)
 					ctx.ui.notify(
 						`Guard blocked temp symlink escape: ${targetPath}`,
@@ -683,6 +718,10 @@ export default function guardExtension(pi: ExtensionAPI) {
 
 			const freezeFinding = inspectFreezeBoundary(targetPath, cwd)
 			if (freezeFinding) {
+				emitGuardNotification(pi, ctx, "Pi guard blocked", [
+					`outside freeze: ${truncate(targetPath, 240)}`,
+					freezeFinding.reason,
+				])
 				if (ctx.hasUI)
 					ctx.ui.notify(
 						`Guard blocked edit outside frozen directory: ${targetPath}`,
