@@ -5,6 +5,7 @@ import type {
 
 const STATE_ENTRY_TYPE = "reload-session-state"
 const STATE_VERSION = 1
+const NEW_SESSION_STATE_KEY = "__piToolsReloadSessionStatePendingNew"
 
 const THINKING_LEVELS = [
 	"off",
@@ -32,6 +33,11 @@ interface CustomStateEntry {
 	data?: unknown
 }
 
+interface NewSessionStateStore {
+	byPreviousSessionFile: Map<string, ReloadSessionState>
+	last?: ReloadSessionState
+}
+
 function isThinkingLevel(value: unknown): value is ThinkingLevel {
 	return THINKING_LEVELS.includes(value as ThinkingLevel)
 }
@@ -53,6 +59,32 @@ function modelKey(model: { provider: string; id: string } | undefined): string {
 	return model ? `${model.provider}/${model.id}` : "no-model"
 }
 
+function getNewSessionStateStore(): NewSessionStateStore {
+	const globalObject = globalThis as typeof globalThis & {
+		[NEW_SESSION_STATE_KEY]?: NewSessionStateStore
+	}
+
+	globalObject[NEW_SESSION_STATE_KEY] ??= {
+		byPreviousSessionFile: new Map<string, ReloadSessionState>(),
+	}
+	return globalObject[NEW_SESSION_STATE_KEY]
+}
+
+function captureCurrentState(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+): ReloadSessionState {
+	const model = ctx.model
+	return {
+		version: STATE_VERSION,
+		sessionId: ctx.sessionManager.getSessionId(),
+		provider: model?.provider,
+		modelId: model?.id,
+		thinkingLevel: pi.getThinkingLevel(),
+		capturedAt: new Date().toISOString(),
+	}
+}
+
 function readLatestReloadState(
 	ctx: ExtensionContext,
 ): ReloadSessionState | undefined {
@@ -69,22 +101,39 @@ function readLatestReloadState(
 	}
 }
 
-function snapshotCurrentState(pi: ExtensionAPI, ctx: ExtensionContext): void {
-	const model = ctx.model
-	pi.appendEntry(STATE_ENTRY_TYPE, {
-		version: STATE_VERSION,
-		sessionId: ctx.sessionManager.getSessionId(),
-		provider: model?.provider,
-		modelId: model?.id,
-		thinkingLevel: pi.getThinkingLevel(),
-		capturedAt: new Date().toISOString(),
-	} satisfies ReloadSessionState)
+function storeNewSessionState(
+	ctx: ExtensionContext,
+	state: ReloadSessionState,
+) {
+	const store = getNewSessionStateStore()
+	const sessionFile = ctx.sessionManager.getSessionFile()
+	if (sessionFile) store.byPreviousSessionFile.set(sessionFile, state)
+	store.last = state
 }
 
-async function restoreReloadState(
+function takeNewSessionState(
+	previousSessionFile: string | undefined,
+): ReloadSessionState | undefined {
+	const store = getNewSessionStateStore()
+	if (previousSessionFile) {
+		const state = store.byPreviousSessionFile.get(previousSessionFile)
+		if (state) {
+			store.byPreviousSessionFile.delete(previousSessionFile)
+			if (store.last === state) store.last = undefined
+			return state
+		}
+	}
+
+	const state = store.last
+	store.last = undefined
+	return state
+}
+
+async function restoreSessionState(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	state: ReloadSessionState,
+	actionLabel: string,
 ): Promise<void> {
 	const targetModelKey =
 		state.provider && state.modelId
@@ -100,7 +149,7 @@ async function restoreReloadState(
 			const model = ctx.modelRegistry.find(state.provider, state.modelId)
 			if (!model) {
 				ctx.ui.notify(
-					`Reload could not retain model ${targetModelKey}: model is not available after reload.`,
+					`${actionLabel} could not retain model ${targetModelKey}: model is not available after session transition.`,
 					"warning",
 				)
 			} else {
@@ -109,7 +158,7 @@ async function restoreReloadState(
 					modelMatchesSnapshot = true
 				} else {
 					ctx.ui.notify(
-						`Reload could not retain model ${targetModelKey}: no configured auth for that model.`,
+						`${actionLabel} could not retain model ${targetModelKey}: no configured auth for that model.`,
 						"warning",
 					)
 				}
@@ -126,7 +175,7 @@ async function restoreReloadState(
 		const actual = pi.getThinkingLevel()
 		if (actual !== state.thinkingLevel && modelMatchesSnapshot) {
 			ctx.ui.notify(
-				`Reload retained ${targetModelKey ?? modelKey(ctx.model)}, but thinking:${state.thinkingLevel} was clamped to ${actual}.`,
+				`${actionLabel} retained ${targetModelKey ?? modelKey(ctx.model)}, but thinking:${state.thinkingLevel} was clamped to ${actual}.`,
 				"warning",
 			)
 		}
@@ -135,14 +184,28 @@ async function restoreReloadState(
 
 export default function reloadSessionStateExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (event, ctx) => {
-		if (event.reason !== "reload") return
-		snapshotCurrentState(pi, ctx)
+		if (event.reason === "reload") {
+			pi.appendEntry(STATE_ENTRY_TYPE, captureCurrentState(pi, ctx))
+			return
+		}
+
+		if (event.reason === "new") {
+			storeNewSessionState(ctx, captureCurrentState(pi, ctx))
+		}
 	})
 
 	pi.on("session_start", async (event, ctx) => {
-		if (event.reason !== "reload") return
-		const state = readLatestReloadState(ctx)
-		if (!state) return
-		await restoreReloadState(pi, ctx, state)
+		if (event.reason === "reload") {
+			const state = readLatestReloadState(ctx)
+			if (!state) return
+			await restoreSessionState(pi, ctx, state, "Reload")
+			return
+		}
+
+		if (event.reason === "new") {
+			const state = takeNewSessionState(event.previousSessionFile)
+			if (!state) return
+			await restoreSessionState(pi, ctx, state, "New session")
+		}
 	})
 }

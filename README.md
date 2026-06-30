@@ -64,7 +64,7 @@ Goal loop can be started explicitly with `/goal <objective>`. It also auto-start
 
 `/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Claude-family models also show `/effort max`, which maps Claude Code's max effort to the highest Pi thinking level exposed by that model and stays sticky across Claude model switches until a level is picked explicitly. `/effort status` shows the current level, max-mode state, and available levels.
 
-The reload session-state extension snapshots the active session's model and thinking level before `/reload`, then restores them after reload. This avoids another Pi pane's most recently saved global defaults leaking into the reloaded pane when multiple sessions use different models or reasoning levels.
+The reload session-state extension snapshots the active session's model and thinking level before `/reload` and `/new`, then restores them after the session transition. This avoids another Pi pane's most recently saved global defaults leaking into the active pane when multiple sessions use different models or reasoning levels.
 
 Bundled default subagents live in `agents/*.md`.
 
