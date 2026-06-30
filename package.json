@@ -32,6 +32,7 @@
 			"./src/extensions/working-indicator.ts",
 			"./src/extensions/fast-mode.ts",
 			"./src/extensions/effort.ts",
+			"./src/extensions/reload-session-state.ts",
 			"./src/extensions/btw.ts",
 			"./src/extensions/cost-audit.ts",
 			"./src/extensions/copy-last-as-md.ts",

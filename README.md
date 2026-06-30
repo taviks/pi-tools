@@ -52,7 +52,7 @@ pnpm -s typecheck
 
 ## What's in the root package
 
-The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, side questions, usage/cost audit, clipboard helpers (`/copy-last`, `/copy-block`, `/copy-session-id`), verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, Fusion deliberation, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
+The root package contains the integrated daily-use extensions: notifications/editor chrome, system-aware theme switching, working indicator polish, fast mode, effort command, reload session-state retention, side questions, usage/cost audit, clipboard helpers (`/copy-last`, `/copy-block`, `/copy-session-id`), verify command, guard/freeze safety checks, explicit durable memory, session plan, goal loop, subagents, workflows, Fusion deliberation, workspace-id guard, bash cleanup/compression, and autoresearch toggles.
 
 The package also ships light variants for the custom dark themes (`nord-light`, `tokyo-night-light`). On macOS startup/reload, the system-theme extension switches managed pairs (`nord`/`nord-light`, `tokyo-night`/`tokyo-night-light`) to match the system dark/light appearance without changing the saved `settings.json` theme.
 
@@ -61,6 +61,8 @@ The guard extension still confirms destructive shell actions, but common temp-sc
 Goal loop can be started explicitly with `/goal <objective>`. It also auto-starts from a `Goal:`/`goal:` prompt header when no goal is already active; if the header has no same-line text, the next non-empty line block is used as the objective.
 
 `/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Claude-family models also show `/effort max`, which maps Claude Code's max effort to the highest Pi thinking level exposed by that model and stays sticky across Claude model switches until a level is picked explicitly. `/effort status` shows the current level, max-mode state, and available levels.
+
+The reload session-state extension snapshots the active session's model and thinking level before `/reload`, then restores them after reload. This avoids another Pi pane's most recently saved global defaults leaking into the reloaded pane when multiple sessions use different models or reasoning levels.
 
 Bundled default subagents live in `agents/*.md`.
 
