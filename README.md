@@ -38,7 +38,7 @@ Run `/reload` in Pi after changing package paths.
 
 ## Development
 
-Use Node.js 20+ and the root pnpm workspace for local checks:
+Use Node.js 22.19+ and the root pnpm workspace for local checks:
 
 ```bash
 corepack enable

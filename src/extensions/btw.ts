@@ -5,8 +5,8 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent"
+import { streamSimple } from "@earendil-works/pi-ai/compat"
 import {
-	streamSimple,
 	type AssistantMessage,
 	type ModelThinkingLevel,
 	type SimpleStreamOptions,
@@ -335,6 +335,7 @@ export default function btwExtension(pi: ExtensionAPI): void {
 					textVerbosity?: "low" | "medium" | "high"
 				} = {
 					apiKey: auth.apiKey,
+					env: auth.env,
 					headers: auth.headers,
 					maxTokens: parsed.maxTokens,
 					reasoning,

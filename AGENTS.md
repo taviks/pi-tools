@@ -2,7 +2,7 @@
 
 ## Repo shape
 
-- This repository is a Node.js 20+ / pnpm 11 workspace and the repo root is itself a Pi package.
+- This repository is a Node.js 22.19+ / pnpm 11 workspace and the repo root is itself a Pi package.
 - Root extensions live in `src/extensions/`.
 - Bundled default subagent definitions live in `agents/`.
 - Standalone companion packages and shell helpers live in `packages/*`.

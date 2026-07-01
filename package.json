@@ -4,7 +4,7 @@
 	"private": true,
 	"packageManager": "pnpm@11.3.0",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22.19.0"
 	},
 	"description": "Custom Pi package and companion packages, user config templates, prompts, skills, and eval fixtures.",
 	"license": "MIT",
@@ -59,10 +59,10 @@
 		"typebox": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "0.78.0",
-		"@earendil-works/pi-ai": "0.78.0",
-		"@earendil-works/pi-coding-agent": "0.78.0",
-		"@earendil-works/pi-tui": "0.78.0",
+		"@earendil-works/pi-agent-core": "0.80.2",
+		"@earendil-works/pi-ai": "0.80.2",
+		"@earendil-works/pi-coding-agent": "0.80.2",
+		"@earendil-works/pi-tui": "0.80.2",
 		"@types/node": "24.12.4",
 		"@types/turndown": "^5.0.5",
 		"prettier": "3.7.4",
