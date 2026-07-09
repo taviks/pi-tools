@@ -43,12 +43,29 @@ function runClipboardCommand(
 			stdio: ["pipe", "ignore", "ignore"],
 		})
 
-		child.once("error", () => resolve(false))
-		child.once("close", (code) => resolve(code === 0))
+		// A present-but-hung clipboard tool (e.g. xclip without a usable
+		// display) must not block the command handler forever.
+		const timer = setTimeout(() => {
+			try {
+				child.kill("SIGKILL")
+			} catch {}
+			resolve(false)
+		}, 3000)
+		timer.unref?.()
+
+		child.once("error", () => {
+			clearTimeout(timer)
+			resolve(false)
+		})
+		child.once("close", (code) => {
+			clearTimeout(timer)
+			resolve(code === 0)
+		})
 
 		if (child.stdin) {
 			child.stdin.end(text)
 		} else {
+			clearTimeout(timer)
 			resolve(false)
 		}
 	})

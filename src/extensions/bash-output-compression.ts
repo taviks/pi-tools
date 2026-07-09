@@ -168,6 +168,9 @@ export default function bashOutputCompressionExtension(pi: ExtensionAPI) {
 
 		const fullOutputPath =
 			event.details?.fullOutputPath ?? writeFullOutput(output)
+		// If the full output cannot be preserved on disk, keep the original
+		// tool result instead of destroying information.
+		if (!fullOutputPath) return
 		const compressed = buildCompressedMessage(command, output, fullOutputPath)
 
 		return {

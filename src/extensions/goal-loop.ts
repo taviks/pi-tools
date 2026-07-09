@@ -896,12 +896,18 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 			)
 	}
 
-	const scheduleContinuation = (ctx: ExtensionContext, reason?: string) => {
+	const scheduleContinuation = (
+		scheduleCtx: ExtensionContext,
+		reason?: string,
+	) => {
 		if (continuationTimer || state.status !== "running") return
 		continuationTimer = setTimeout(
 			() => {
 				continuationTimer = undefined
 				if (state.status !== "running") return
+				// Prefer the freshest context; the captured one can go stale
+				// across session reloads while the timer is pending.
+				const ctx = latestContext ?? scheduleCtx
 				if (!ctx.isIdle()) {
 					scheduleContinuation(ctx, reason)
 					return
@@ -951,7 +957,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 					deliverAs: "followUp",
 				})
 			},
-			ctx.isIdle() ? CONTINUATION_DELAY_MS : IDLE_RETRY_MS,
+			scheduleCtx.isIdle() ? CONTINUATION_DELAY_MS : IDLE_RETRY_MS,
 		)
 	}
 

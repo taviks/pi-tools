@@ -710,6 +710,11 @@ function formatToolCall(
 		return p.startsWith(home) ? `~${p.slice(home.length)}` : p
 	}
 
+	// Malformed subprocess JSON can produce nullish/non-object arguments.
+	if (!args || typeof args !== "object") {
+		return themeFg("accent", toolName)
+	}
+
 	switch (toolName) {
 		case "bash": {
 			const command = (args.command as string) || "..."
@@ -2945,6 +2950,19 @@ export default function (pi: ExtensionAPI) {
 							result.stderr ||
 							getFinalOutput(result.messages) ||
 							"(no output)")
+					// Mark unexecuted chain steps as cancelled so they are not
+					// reported as pending/queued after the chain has stopped.
+					const now = Date.now()
+					for (let j = i + 1; j < allResults.length; j++) {
+						const pending = allResults[j]
+						if (!pending) continue
+						if (getResultRunState(pending) !== "pending") continue
+						pending.runState = "cancelled"
+						pending.updatedAt = now
+						pending.finishedAt = now
+						if (pending.exitCode === -1) pending.exitCode = 130
+					}
+					updateDetails([...allResults])
 					return
 				}
 				previousOutput = getFinalOutput(result.messages)

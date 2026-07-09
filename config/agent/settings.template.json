@@ -31,7 +31,6 @@
 	"quietStartup": true,
 	"doubleEscapeAction": "tree",
 	"showHardwareCursor": true,
-	"lastChangelogVersion": "0.77.0",
 	"enableInstallTelemetry": false,
 	"treeFilterMode": "default"
 }

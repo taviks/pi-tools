@@ -427,7 +427,9 @@ function resolveJudge(
 	panel: ResolvedMember[],
 ): ResolvedMember {
 	const thinkingLevel =
-		input.judge?.thinkingLevel ?? DEFAULT_DELIBERATION_THINKING
+		input.judge?.thinkingLevel ??
+		input.thinkingLevel ??
+		DEFAULT_DELIBERATION_THINKING
 	const explicit = input.judge?.model?.trim()
 	const envJudge = process.env.PI_FUSION_JUDGE?.trim()
 	if (explicit) return { label: "judge", model: explicit, thinkingLevel }
@@ -664,7 +666,11 @@ function scoutTask(prompt: string): string {
 function isScoutGated(output: string): boolean {
 	const trimmed = output.trim()
 	if (!trimmed) return true
-	return trimmed.toUpperCase().includes(SCOUT_GATE_TOKEN)
+	// Only gate when the token appears as its own line (or the whole output),
+	// so prose that merely mentions the token does not drop real scout context.
+	return trimmed
+		.split("\n")
+		.some((line) => line.trim().toUpperCase() === SCOUT_GATE_TOKEN)
 }
 
 function panelistTask(
@@ -701,11 +707,22 @@ function buildJudgePacket(
 	contextBundle: string | undefined,
 	baselineOutput: string | undefined,
 ): string {
+	const perPanelistCap = Math.max(
+		8 * 1024,
+		Math.floor(
+			(PROMPT_CONTEXT_CAP_BYTES * 0.8) / Math.max(1, members.length),
+		),
+	)
 	const blocks = members.map((member, i) => {
 		const heading = blind
 			? `## Panelist ${String.fromCharCode(65 + i)}`
 			: `## Panelist ${String.fromCharCode(65 + i)} (${member.model ?? "default model"})`
-		return `${heading}\n${outputs[i] ?? "(no output)"}`
+		const output = truncateBytes(
+			outputs[i] ?? "(no output)",
+			perPanelistCap,
+			"[Panelist output truncated for the judge.]",
+		)
+		return `${heading}\n${output}`
 	})
 	const parts = ["# Original prompt", prompt, ""]
 	if (contextBundle) {
@@ -729,17 +746,19 @@ function buildJudgePacket(
 			"",
 		)
 	}
-	parts.push(
+	const taskSection = [
 		"# Your task",
 		"Synthesize the panelist analyses using your required output format (Consensus, Contradictions, Partial coverage, Unique insights, Blind spots, Final answer, Panel value-add" +
 			(baselineOutput ? ", Deliberation vs single-model baseline" : "") +
 			"). Attribute claims to panelist labels.",
-	)
-	return truncateBytes(
+	].join("\n")
+	// Truncate only the context body so the task instructions are never cut off.
+	const body = truncateBytes(
 		parts.join("\n"),
-		PROMPT_CONTEXT_CAP_BYTES,
+		Math.max(0, PROMPT_CONTEXT_CAP_BYTES - byteLength(taskSection) - 2),
 		"[Panel context truncated for the judge.]",
 	)
+	return `${body}\n\n${taskSection}`
 }
 
 function createRunSignal(
@@ -1041,7 +1060,17 @@ async function runFusion(
 				emit()
 				return result
 			}),
-			runBaseline(),
+			// A baseline infrastructure failure must never take down the panel.
+			runBaseline().catch((error) => {
+				if (details.baseline) {
+					details.baseline.status = "failed"
+					details.baseline.error =
+						error instanceof Error ? error.message : String(error)
+				}
+				details.logs.push("Baseline run failed; continuing without it.")
+				emit()
+				return undefined
+			}),
 		])
 
 		const outputs = panelResults.map((r) => resultText(r))

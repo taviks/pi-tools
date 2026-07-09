@@ -24,43 +24,57 @@ function getShellConfig() {
 	}
 }
 
-function signalProcessTree(pid: number, signal: NodeJS.Signals) {
+function signalProcessTree(
+	pid: number,
+	signal: NodeJS.Signals,
+	options?: { groupOnly?: boolean },
+): boolean {
 	if (process.platform === "win32") {
 		const taskkill = spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
 			detached: true,
 			stdio: "ignore",
 		})
 		taskkill.unref()
-		return
+		return true
 	}
 
 	try {
 		process.kill(-pid, signal)
-		return
+		return true
 	} catch {
-		// Fall back to the process itself if its process group no longer exists.
+		// Process group no longer exists.
 	}
+
+	// After the child has been reaped its PID may be reused by an unrelated
+	// process, so post-exit sweeps must never fall back to the bare PID.
+	if (options?.groupOnly) return false
 
 	try {
 		process.kill(pid, signal)
+		return true
 	} catch {
 		// Already gone.
 	}
+	return false
 }
 
 function killProcessTree(pid: number) {
 	signalProcessTree(pid, "SIGKILL")
 }
 
+/** Post-exit sweep: signal only the detached process group, never a bare
+ * (possibly reused) PID, and skip the SIGKILL follow-up when the group is
+ * already gone. */
 function terminateProcessTree(pid: number) {
 	if (process.platform === "win32") {
 		killProcessTree(pid)
 		return
 	}
 
-	signalProcessTree(pid, "SIGTERM")
+	const delivered = signalProcessTree(pid, "SIGTERM", { groupOnly: true })
+	if (!delivered) return
 	const forceKill = setTimeout(
-		() => signalProcessTree(pid, "SIGKILL"),
+		() => signalProcessTree(pid, "SIGKILL", { groupOnly: true }),
 		TERMINATE_GRACE_MS,
 	)
 	forceKill.unref()
@@ -172,7 +186,10 @@ function createSweepingBashOperations(): BashOperations {
 				const child = spawn(shell, [...args, command], {
 					cwd,
 					detached: process.platform !== "win32",
-					env: options.env ?? process.env,
+					env:
+						options.env && Object.keys(options.env).length > 0
+							? options.env
+							: process.env,
 					stdio: ["ignore", "pipe", "pipe"],
 				})
 

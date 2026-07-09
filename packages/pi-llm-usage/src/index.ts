@@ -206,7 +206,7 @@ function renderPanel(
 	const footerLeftLabel = fitTextEnd("[star/fork]", footerLeftMax)
 	const footerLeft = footerLeftLabel
 		? hyperlink(
-				"https://github.com/your-org/pi-tools/tree/main/packages/pi-llm-usage",
+				"https://github.com/taviks/pi-tools/tree/main/packages/pi-llm-usage",
 				footerLeftLabel,
 			)
 		: ""

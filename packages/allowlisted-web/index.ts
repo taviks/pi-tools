@@ -10,7 +10,11 @@ import { Readability } from "@mozilla/readability"
 import { parseHTML } from "linkedom"
 import TurndownService from "turndown"
 import { promises as fs } from "node:fs"
+import { lookup as lookupCallback } from "node:dns"
 import { lookup } from "node:dns/promises"
+// Node's built-in fetch rejects dispatchers from a different undici build,
+// so the guarded fetch path must use undici's own fetch with its Agent.
+import { Agent, fetch as undiciFetch } from "undici"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { isIP } from "node:net"
@@ -500,7 +504,10 @@ function matchRule(
 	for (const rule of config.rules) {
 		if (!rule.protocols.includes(protocol)) continue
 		if (!hostMatches(rule, hostname)) continue
-		if (rule.port && port && rule.port !== port) continue
+		// Rules without an explicit port only match the protocol's default
+		// port, so a bare-host rule cannot expose arbitrary services.
+		const rulePort = rule.port ?? (protocol === "http" ? "80" : "443")
+		if (port && rulePort !== port) continue
 		if (!rule.pathPrefixes.some((prefix) => url.pathname.startsWith(prefix)))
 			continue
 		return { ok: true, rule }
@@ -558,6 +565,50 @@ function isPrivateAddress(address: string): boolean {
 	if (version === 6) return isPrivateIpv6(address)
 	return true
 }
+
+// Validate resolved addresses at connect time so a rebinding DNS server
+// cannot return public IPs to the pre-flight check and private IPs to the
+// actual fetch (SSRF via DNS TOCTOU).
+const privateNetworkGuardAgent = new Agent({
+	connect: {
+		lookup(hostname, options, callback) {
+			lookupCallback(hostname, { ...options, all: true }, (err, results) => {
+				if (err) {
+					callback(err, [])
+					return
+				}
+				const records = Array.isArray(results) ? results : [results]
+				const blocked = records.find((record) =>
+					isPrivateAddress(record.address),
+				)
+				if (blocked || records.length === 0) {
+					callback(
+						new Error(
+							blocked
+								? `Blocked ${hostname}: DNS resolved to private/reserved address ${blocked.address}.`
+								: `DNS lookup returned no addresses for ${hostname}.`,
+						),
+						[],
+					)
+					return
+				}
+				if (options.all) {
+					callback(null, records)
+					return
+				}
+				// Caller asked for a single address; return the first validated one
+				// using the single-result callback shape.
+				;(
+					callback as unknown as (
+						err: Error | null,
+						address: string,
+						family: number,
+					) => void
+				)(null, records[0].address, records[0].family)
+			})
+		},
+	},
+})
 
 async function assertNetworkAllowed(
 	url: URL,
@@ -618,8 +669,17 @@ function responseErrorText(err: unknown): string {
 	return message
 }
 
+interface ReadableBodyResponse {
+	body: {
+		getReader(): {
+			read(): Promise<{ done: boolean; value?: Uint8Array }>
+			cancel(): Promise<unknown> | void
+		}
+	} | null
+}
+
 async function readCappedText(
-	response: Response,
+	response: ReadableBodyResponse,
 	maxBytes: number,
 ): Promise<{ text: string; bytesRead: number; truncated: boolean }> {
 	if (!response.body) return { text: "", bytesRead: 0, truncated: false }
@@ -865,12 +925,17 @@ async function fetchOne(
 			? AbortSignal.any([signal, timeoutSignal])
 			: timeoutSignal
 
-		let response: Response
+		let response: Awaited<ReturnType<typeof undiciFetch>>
 		try {
-			response = await fetch(current, {
+			// Pin connect-time DNS validation unless private targets are
+			// explicitly allowed by config.
+			response = await undiciFetch(current.toString(), {
 				method: opts.method,
 				redirect: "manual",
 				signal: requestSignal,
+				...(config.allowPrivateNetworks
+					? {}
+					: { dispatcher: privateNetworkGuardAgent }),
 				headers: {
 					Accept:
 						"text/html,application/xhtml+xml,application/xml;q=0.9,application/json,text/plain;q=0.8,*/*;q=0.5",
@@ -1648,6 +1713,11 @@ export default function (pi: ExtensionAPI) {
 				id: generateId(),
 				timestamp: Date.now(),
 				items,
+			}
+			// Evict expired batches so long-lived sessions do not leak memory.
+			const now = Date.now()
+			for (const [id, stored] of storedBatches) {
+				if (now - stored.timestamp > CACHE_TTL_MS) storedBatches.delete(id)
 			}
 			storedBatches.set(batch.id, batch)
 			pi.appendEntry(CUSTOM_ENTRY_TYPE, batch)

@@ -58,9 +58,10 @@ link_item() {
   mkdir -p "$(dirname "$dest")"
 
   if [[ -L "$dest" ]]; then
-    local current
+    local current resolved_current
     current="$(readlink "$dest")"
-    if [[ "$current" == "$src" ]]; then
+    resolved_current="$(cd "$(dirname "$dest")" 2>/dev/null && cd "$(dirname "$current")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$current")" || printf '%s' "$current")"
+    if [[ "$current" == "$src" || "$resolved_current" == "$src" ]]; then
       echo "ok: $dest -> $src"
       return
     fi

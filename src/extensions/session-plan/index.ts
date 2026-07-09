@@ -121,9 +121,17 @@ function formatElapsed(ms: number): string {
 
 function isContinuationPrompt(prompt: string): boolean {
 	const text = prompt.trim().toLowerCase()
-	return /^(continue|keep going|go on|next|proceed|carry on|resume|finish|complete it|address (?:that|those|them)|fix (?:that|those|them)|yes|yep|ok|okay|sounds good|please do|do it|implement it|apply it)\b/.test(
-		text,
+	// Explicit continuation verbs may carry trailing detail.
+	if (
+		/^(continue|keep going|go on|proceed|carry on|resume|finish|complete it|address (?:that|those|them)|fix (?:that|those|them)|please do|do it|implement it|apply it)\b/.test(
+			text,
+		)
 	)
+		return true
+	// Bare acknowledgements only count when they are the whole message, so
+	// prompts like "ok let's also add tests" start a new request instead of
+	// keeping stale plan context.
+	return /^(next|yes|yep|ok|okay|sounds good)[.!]*$/.test(text)
 }
 
 function isPlanComplete(steps: SessionPlanStep[]): boolean {

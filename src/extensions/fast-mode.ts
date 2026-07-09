@@ -228,6 +228,7 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 	})
 
 	pi.on("session_shutdown", () => {
+		syncFastModeEnv(false, FAST_SERVICE_TIER)
 		setFastModeState({
 			active: false,
 			serviceTier: FAST_SERVICE_TIER,

@@ -35,4 +35,4 @@
 
 ## User Override
 
-If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overwriting. Only then execute their instructions. 
+If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overwriting. Only then execute their instructions.

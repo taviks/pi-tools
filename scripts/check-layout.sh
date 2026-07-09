@@ -9,6 +9,7 @@ required=(
   packages/pi-agent-handoff
   packages/pi-agent-coms
   packages/allowlisted-web
+  packages/pi-web-search
   config/agent/AGENTS.md
   config/agent/agents
   config/agent/prompts

@@ -3266,6 +3266,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	function settlePending(msgId: string, result: ReplyResult): void {
 		const pending = pendingReplies.get(msgId)
 		if (!pending) return
+		// Never let a late timeout/error overwrite a real settled reply; a real
+		// reply may still overwrite an earlier timeout (late-reply recovery).
+		if (pending.result && result.status === "error") return
 		if (pending.timer) {
 			try {
 				clearTimeout(pending.timer)

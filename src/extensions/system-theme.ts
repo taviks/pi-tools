@@ -22,6 +22,7 @@ async function getMacSystemAppearance(): Promise<SystemAppearance | undefined> {
 	try {
 		const { stdout } = await execAsync(
 			"osascript -e 'tell application \"System Events\" to tell appearance preferences to return dark mode'",
+			{ timeout: 2000 },
 		)
 		return stdout.trim() === "true" ? "dark" : "light"
 	} catch {

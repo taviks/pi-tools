@@ -402,8 +402,15 @@ function normalizeWorkflow(input: WorkflowInput): NormalizedWorkflow {
 		6 * 60 * 60,
 	)
 
+	const seenTitles = new Map<string, number>()
 	const phases = input.phases.map((phase, phaseIndex) => {
-		const title = phase.title?.trim() || `Phase ${phaseIndex + 1}`
+		const baseTitle = phase.title?.trim() || `Phase ${phaseIndex + 1}`
+		// Phase titles key snapshot-agent lookups; dedupe collisions so status
+		// updates for same-named phases cannot target the wrong agents.
+		const seenCount = seenTitles.get(baseTitle) ?? 0
+		seenTitles.set(baseTitle, seenCount + 1)
+		const title =
+			seenCount === 0 ? baseTitle : `${baseTitle} (${seenCount + 1})`
 		const parallelRuns = phase.parallel ?? phase.tasks
 		const hasParallel = Array.isArray(parallelRuns) && parallelRuns.length > 0
 		const hasSingle = Boolean(phase.agent && phase.task)

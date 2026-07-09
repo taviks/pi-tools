@@ -399,7 +399,7 @@ function writeMemory(params: {
 		"",
 	].join("\n")
 	const body = params.content.trim()
-	fs.writeFileSync(filePath, `${frontmatter}# ${title}\n\n${body}\n`)
+	writeFileAtomic(filePath, `${frontmatter}# ${title}\n\n${body}\n`)
 	return {
 		path: filePath,
 		type: params.type,
@@ -476,8 +476,28 @@ function mergeMemory(params: {
 		return record
 
 	const stamp = new Date().toISOString().slice(0, 10)
-	fs.appendFileSync(record.path, `\n\n## Update ${stamp}\n\n${content}\n`)
+	const existing = fs.readFileSync(record.path, "utf8")
+	writeFileAtomic(
+		record.path,
+		`${existing.replace(/\n*$/, "\n")}\n\n## Update ${stamp}\n\n${content}\n`,
+	)
 	return readMemoryRecord(record.path) ?? record
+}
+
+/** Write via temp file + rename so a crash cannot leave a truncated memory. */
+function writeFileAtomic(filePath: string, content: string): void {
+	const tempPath = `${filePath}.${process.pid}.${crypto
+		.randomBytes(3)
+		.toString("hex")}.tmp`
+	try {
+		fs.writeFileSync(tempPath, content)
+		fs.renameSync(tempPath, filePath)
+	} catch (error) {
+		try {
+			fs.rmSync(tempPath, { force: true })
+		} catch {}
+		throw error
+	}
 }
 
 function listMarkdownFiles(dir: string): string[] {

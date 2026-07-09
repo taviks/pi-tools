@@ -51,7 +51,8 @@ String entries with a full URL match that origin. String entries with just a hos
 - GET/HEAD only.
 - No cookies, no Authorization header, no browser profile access.
 - HTTP disabled by default.
-- Localhost/private/reserved IPs blocked by default, including DNS-resolved private addresses.
+- Localhost/private/reserved IPs blocked by default, including DNS-resolved private addresses. Resolved addresses are re-validated at connection time to defeat DNS-rebinding SSRF.
+- Rules without an explicit port only match the protocol's default port (443/80), so a bare-host rule cannot expose arbitrary services on that host.
 - Every redirect hop must also match the allowlist.
 - Fetched page content is wrapped as untrusted data for the agent.
 

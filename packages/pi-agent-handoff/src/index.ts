@@ -553,24 +553,41 @@ function runProcessWithInput(
 			cwd,
 			stdio: ["pipe", "pipe", "pipe"],
 		})
+		const maxBufferBytes = 16 * 1024 * 1024
 		let stdout = ""
 		let stderr = ""
 		let settled = false
 		const timeout = setTimeout(() => {
 			if (settled) return
+			settled = true
 			child.kill("SIGTERM")
 			setTimeout(() => child.kill("SIGKILL"), 1000).unref()
 			reject(new Error(`Timed out after ${timeoutSeconds}s: ${command}`))
 		}, timeoutSeconds * 1000)
 		timeout.unref()
 
+		const failOversized = (stream: "stdout" | "stderr") => {
+			if (settled) return
+			settled = true
+			clearTimeout(timeout)
+			child.kill("SIGTERM")
+			setTimeout(() => child.kill("SIGKILL"), 1000).unref()
+			reject(
+				new Error(
+					`${command} produced more than ${maxBufferBytes} bytes on ${stream}; aborting.`,
+				),
+			)
+		}
+
 		child.stdout.setEncoding("utf8")
 		child.stderr.setEncoding("utf8")
 		child.stdout.on("data", (chunk) => {
 			stdout += chunk
+			if (stdout.length > maxBufferBytes) failOversized("stdout")
 		})
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk
+			if (stderr.length > maxBufferBytes) failOversized("stderr")
 		})
 		child.once("error", (error) => {
 			if (settled) return
@@ -647,6 +664,11 @@ function parseCommandArgs(input: string): {
 		if (token === "--model") {
 			flags.set("model", tokens[++i] ?? "")
 			continue
+		}
+		if (token.startsWith("--")) {
+			throw new Error(
+				`Unknown flag: ${token}. Supported flags: --yes/-y, --model <name>.`,
+			)
 		}
 		positionals.push(token)
 	}
@@ -979,10 +1001,10 @@ export default function agentHandoffExtension(pi: ExtensionAPI) {
 		getArgumentCompletions: commandItems,
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const info = getWorkspaceInfo(ctx.cwd)
-			const { flags, positionals } = parseCommandArgs(args.trim())
-			const command = positionals.shift()?.toLowerCase()
 
 			try {
+				const { flags, positionals } = parseCommandArgs(args.trim())
+				const command = positionals.shift()?.toLowerCase()
 				if (!command || command === "help") {
 					notify(
 						ctx,
