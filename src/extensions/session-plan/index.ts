@@ -434,7 +434,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 	})
 
 	const restoreStateFromSession = (ctx: ExtensionContext) => {
-		const entries = ctx.sessionManager.getEntries()
+		const entries = ctx.sessionManager.getBranch()
 		const lastState = entries
 			.filter(
 				(entry: { type: string; customType?: string }) =>
@@ -653,7 +653,7 @@ export default function sessionPlanExtension(pi: ExtensionAPI): void {
 		persistState()
 	})
 
-	pi.on("agent_end", (_event, ctx) => {
+	pi.on("agent_settled", (_event, ctx) => {
 		latestContext = ctx
 		stopWorking(ctx)
 	})

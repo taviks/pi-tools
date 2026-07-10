@@ -5,6 +5,7 @@ Versioned, reviewable Pi config that can be symlinked into `~/.pi/agent`.
 ## Contents
 
 - `agent/AGENTS.md` — global agent instructions.
+- `agent/keybindings.json` — managed Pi keybindings, including both Shift+Enter and Ctrl+J for newlines.
 - `agent/agents/` — user-level subagent definitions.
 - `agent/prompts/` — prompt templates exposed as slash templates (see index below).
 - `agent/skills/` — user-level skills and supporting files.

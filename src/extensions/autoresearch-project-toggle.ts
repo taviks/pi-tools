@@ -1,6 +1,9 @@
-import type {
-	ExtensionAPI,
-	ExtensionCommandContext,
+import {
+	getAgentDir,
+	SettingsManager,
+	type ExtensionAPI,
+	type ExtensionCommandContext,
+	type PackageSource,
 } from "@earendil-works/pi-coding-agent"
 import * as fs from "node:fs"
 import * as os from "node:os"
@@ -8,8 +11,6 @@ import * as path from "node:path"
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
 const AUTORESEARCH_PACKAGE_SOURCE = "npm:pi-autoresearch"
-
-type Settings = Record<string, unknown> & { packages?: unknown[] }
 
 type NotifyKind = "info" | "warning" | "error"
 
@@ -96,24 +97,37 @@ function findProjectRoot(cwd: string, args: string): string {
 	return gitRoot ?? path.resolve(cwd)
 }
 
-function settingsPathForRoot(root: string): string {
-	return path.join(root, ".pi", "settings.json")
+function settingsErrorMessage(
+	operation: string,
+	settings: SettingsManager,
+): string | undefined {
+	const errors = settings.drainErrors()
+	if (errors.length === 0) return undefined
+	return `${operation}: ${errors
+		.map(({ scope, error }) => `${scope}: ${error.message}`)
+		.join("; ")}`
 }
 
-function readSettings(settingsPath: string): Settings {
-	if (!fs.existsSync(settingsPath)) return {}
-	const raw = fs.readFileSync(settingsPath, "utf8")
-	if (!raw.trim()) return {}
-	const parsed = JSON.parse(raw) as Settings
-	if (parsed.packages !== undefined && !Array.isArray(parsed.packages)) {
-		throw new Error(`${settingsPath}: expected \"packages\" to be an array.`)
-	}
-	return parsed
+function projectSettingsManager(
+	root: string,
+	ctx: ExtensionCommandContext,
+): SettingsManager {
+	const settings = SettingsManager.create(root, getAgentDir(), {
+		projectTrusted: ctx.isProjectTrusted(),
+	})
+	const error = settingsErrorMessage("Failed to load Pi settings", settings)
+	if (error) throw new Error(error)
+	return settings
 }
 
-function writeSettings(settingsPath: string, settings: Settings) {
-	fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
-	fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`)
+async function persistProjectPackages(
+	settings: SettingsManager,
+	packages: PackageSource[],
+): Promise<void> {
+	settings.setProjectPackages(packages)
+	await settings.flush()
+	const error = settingsErrorMessage("Failed to save Pi settings", settings)
+	if (error) throw new Error(error)
 }
 
 async function reloadAfterChange(
@@ -149,9 +163,8 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const root = findProjectRoot(ctx.cwd, args)
-				const settingsPath = settingsPathForRoot(root)
-				const settings = readSettings(settingsPath)
-				const packages = settings.packages ?? []
+				const settings = projectSettingsManager(root, ctx)
+				const packages = settings.getProjectSettings().packages ?? []
 				const autoresearchEntries = packages.filter((entry) =>
 					isAutoresearchEntry(entry),
 				)
@@ -168,11 +181,10 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 					return
 				}
 
-				settings.packages = [
+				await persistProjectPackages(settings, [
 					...withoutAutoresearch,
 					AUTORESEARCH_PACKAGE_SOURCE,
-				]
-				writeSettings(settingsPath, settings)
+				])
 				await reloadAfterChange(
 					ctx,
 					`Autoresearch enabled for ${root}. Use /autoresearch after reload.`,
@@ -192,9 +204,8 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const root = findProjectRoot(ctx.cwd, args)
-				const settingsPath = settingsPathForRoot(root)
-				const settings = readSettings(settingsPath)
-				const packages = settings.packages ?? []
+				const settings = projectSettingsManager(root, ctx)
+				const packages = settings.getProjectSettings().packages ?? []
 				const withoutAutoresearch = packages.filter(
 					(entry) => !isAutoresearchEntry(entry),
 				)
@@ -204,8 +215,7 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 					return
 				}
 
-				settings.packages = withoutAutoresearch
-				writeSettings(settingsPath, settings)
+				await persistProjectPackages(settings, withoutAutoresearch)
 				await reloadAfterChange(
 					ctx,
 					`Autoresearch disabled for ${root}. Existing autoresearch files were left untouched.`,
@@ -225,10 +235,9 @@ export default function autoresearchProjectToggle(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const root = findProjectRoot(ctx.cwd, args)
-				const settingsPath = settingsPathForRoot(root)
-				const settings = readSettings(settingsPath)
-				const enabled = (settings.packages ?? []).some((entry) =>
-					isAutoresearchEntry(entry),
+				const settings = projectSettingsManager(root, ctx)
+				const enabled = (settings.getProjectSettings().packages ?? []).some(
+					(entry) => isAutoresearchEntry(entry),
 				)
 				notify(
 					ctx,

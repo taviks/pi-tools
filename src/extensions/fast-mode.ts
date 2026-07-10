@@ -33,14 +33,22 @@ function isFastServiceTier(value: unknown): value is FastServiceTier {
 function serviceTierLabel(tier: FastServiceTier): string {
 	// OpenAI's user-facing Codex docs call this Fast mode. The Responses API
 	// service_tier value Pi sends is "priority", which carries the documented
-	// GPT-5.5/GPT-5.4 Fast-mode credit multiplier.
+	// GPT-5.6/GPT-5.5/GPT-5.4 Fast-mode credit multiplier.
 	return tier === "priority" ? "fast/priority" : tier
 }
+
+const FAST_MODE_MODEL_IDS = new Set([
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+	"gpt-5.5",
+	"gpt-5.4",
+])
 
 function modelIdSupportsFastServiceTier(id: unknown): boolean {
 	if (typeof id !== "string") return false
 	const baseId = id.includes("/") ? id.split("/").pop() : id
-	return baseId === "gpt-5.5" || baseId === "gpt-5.4"
+	return !!baseId && FAST_MODE_MODEL_IDS.has(baseId)
 }
 
 function supportsFastMode(ctx: ExtensionContext | undefined): boolean {
@@ -113,7 +121,7 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 			: FAST_SERVICE_TIER
 
 		const lastState = ctx.sessionManager
-			.getEntries()
+			.getBranch()
 			.filter(
 				(entry: { type?: string; customType?: string }) =>
 					entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE,
@@ -132,7 +140,7 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 
 	const notifyUnsupported = (ctx: ExtensionContext) => {
 		ctx.ui.notify(
-			`OpenAI Fast mode is only available for openai/openai-codex GPT-5.5 or GPT-5.4 requests. Current model: ${modelLabel(ctx)}.`,
+			`OpenAI Fast mode is only available for openai/openai-codex GPT-5.6, GPT-5.5, or GPT-5.4 requests. Current model: ${modelLabel(ctx)}.`,
 			"warning",
 		)
 	}
@@ -237,7 +245,7 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 
 	pi.registerCommand("fast", {
 		description:
-			"Toggle OpenAI service-tier Fast mode for GPT-5.5/GPT-5.4. Usage: /fast [toggle|on|off|status]",
+			"Toggle OpenAI service-tier Fast mode for GPT-5.6/GPT-5.5/GPT-5.4. Usage: /fast [toggle|on|off|status]",
 		getArgumentCompletions: commandItems,
 		handler: async (args, ctx) => {
 			runAction(args, ctx)
@@ -245,7 +253,8 @@ export default function fastModeExtension(pi: ExtensionAPI) {
 	})
 
 	pi.registerShortcut(SHORTCUT, {
-		description: "Toggle OpenAI service-tier Fast mode for GPT-5.5/GPT-5.4",
+		description:
+			"Toggle OpenAI service-tier Fast mode for GPT-5.6/GPT-5.5/GPT-5.4",
 		handler: async (ctx) => {
 			runAction("toggle", ctx)
 		},

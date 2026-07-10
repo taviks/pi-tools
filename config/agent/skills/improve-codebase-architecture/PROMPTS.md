@@ -2,7 +2,7 @@
 
 Copy or adapt these prompts when using this skill in pi.
 
-Default model: `openai-codex/gpt-5.5` unless the user requests otherwise.
+Default model: `openai-codex/gpt-5.6-sol` unless the user requests otherwise.
 
 ## Scout — subsystem exploration
 

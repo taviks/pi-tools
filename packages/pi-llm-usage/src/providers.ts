@@ -268,7 +268,7 @@ export async function fetchAnthropicUsage(
 
 /**
  * The Codex `wham/usage` endpoint does NOT expose the per-feature "premium"
- * rate-limit bucket (e.g. the cap that gpt-5.5 burns). That bucket only appears
+ * rate-limit bucket (e.g. the cap that gpt-5.6-sol and gpt-5.5 burn). That bucket only appears
  * in the `X-Codex-*` response headers of an actual 429. Pi records those headers
  * in its session JSONL logs, so we scrape the most recent one to surface a
  * premium-limit indicator the official usage API can't show.
@@ -392,7 +392,7 @@ function findLatestCodexLimitEvent(): CodexLimitEvent | null {
 
 /**
  * If a recent 429 reported a still-active limit bucket that wham/usage doesn't
- * expose (notably the per-feature "premium" cap that gpt-5.5 drains), append
+ * expose (notably the per-feature "premium" cap that gpt-5.6-sol and gpt-5.5 drain), append
  * window(s) for it and return an explanatory note. Returns undefined when there
  * is nothing extra to show.
  */
@@ -445,7 +445,7 @@ function appendCodexLimitFromLogs(
 				minute: "2-digit",
 			})
 		: "recently"
-	return `${limitName} cap hit at ${when} (e.g. gpt-5.5). Not reported by ChatGPT's usage API; derived from the last 429.`
+	return `${limitName} cap hit at ${when} (e.g. gpt-5.6-sol or gpt-5.5). Not reported by ChatGPT's usage API; derived from the last 429.`
 }
 
 export async function fetchCodexUsage(

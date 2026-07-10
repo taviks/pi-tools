@@ -2,7 +2,7 @@
 
 Use these when a PR is large enough that independent slices are worth delegating.
 
-Default model: `openai-codex/gpt-5.5` unless the user requests otherwise.
+Default model: `openai-codex/gpt-5.6-sol` unless the user requests otherwise.
 
 ## Scout — changed-area context
 

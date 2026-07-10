@@ -261,6 +261,7 @@ const REASONING_LABEL_COMPLETIONS = [
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ] as const
 const MODE_COMPLETIONS = [
 	...new Set([
@@ -2489,6 +2490,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 	let activeAgentRunSeq = 0
 	let localAgentWorking = false
 	let agentEnding = false
+	let pendingAgentEndMessages: unknown[] = []
 	let shuttingDown = false
 	let rebindInFlight: Promise<void> | null = null
 	let autoReplyRetryInFlight: Promise<void> | null = null
@@ -4003,12 +4005,11 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		return autoReplyRetryInFlight
 	}
 
-	async function autoReplyFromAgentEnd(
-		event: unknown,
+	async function autoReplyFromMessages(
+		eventMessages: unknown[],
 		ctx: ExtensionContext,
 	): Promise<void> {
 		if (!identity || inboundAutoReplies.size === 0) return
-		const eventMessages = (event as { messages?: unknown })?.messages
 		const matched = autoReplyCandidates(eventMessages, ctx)
 		if (matched.length === 0) {
 			await retryPendingAutoReplyDeliveries(ctx)
@@ -4030,6 +4031,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		stopWidgetAnimation()
 		localAgentWorking = false
 		agentEnding = false
+		pendingAgentEndMessages = []
 		heartbeatTimer = null
 		pingTimer = null
 		const serverToClose = server
@@ -4109,6 +4111,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		installComsScopedAutocomplete(ctx)
 		currentCtx = ctx
 		localAgentWorking = false
+		pendingAgentEndMessages = []
 		shuttingDown = false
 		widgetMode = normalizeWidgetMode(
 			pi.getFlag("coms-widget") || process.env.PI_AGENT_COMS_WIDGET,
@@ -4169,11 +4172,19 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		if (ctx.hasUI) installWidget(ctx)
 	})
 
-	pi.on("agent_end", async (event, ctx) => {
+	pi.on("agent_end", (event, ctx) => {
+		currentCtx = ctx
+		pendingAgentEndMessages.push(...event.messages)
+	})
+
+	pi.on("agent_settled", async (_event, ctx) => {
 		currentCtx = ctx
 		agentEnding = true
+		const messages = pendingAgentEndMessages
+		pendingAgentEndMessages = []
 		try {
-			await autoReplyFromAgentEnd(event, ctx)
+			if (messages.length > 0) await autoReplyFromMessages(messages, ctx)
+			else await retryPendingAutoReplyDeliveries(ctx)
 		} finally {
 			localAgentWorking = false
 			agentEnding = false

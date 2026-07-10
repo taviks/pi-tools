@@ -13,8 +13,9 @@ Environment:
   PI_AGENT_DIR  Target Pi agent config directory. Default: ~/.pi/agent
 
 What it links:
-  config/agent/AGENTS.md -> ~/.pi/agent/AGENTS.md
-  config/agent/agents    -> ~/.pi/agent/agents
+  config/agent/AGENTS.md       -> ~/.pi/agent/AGENTS.md
+  config/agent/keybindings.json -> ~/.pi/agent/keybindings.json
+  config/agent/agents          -> ~/.pi/agent/agents
   config/agent/prompts   -> ~/.pi/agent/prompts
   config/agent/skills    -> ~/.pi/agent/skills
 
@@ -78,6 +79,7 @@ link_item() {
 }
 
 link_item "$repo_root/config/agent/AGENTS.md" "$agent_dir/AGENTS.md"
+link_item "$repo_root/config/agent/keybindings.json" "$agent_dir/keybindings.json"
 link_item "$repo_root/config/agent/agents" "$agent_dir/agents"
 link_item "$repo_root/config/agent/prompts" "$agent_dir/prompts"
 link_item "$repo_root/config/agent/skills" "$agent_dir/skills"

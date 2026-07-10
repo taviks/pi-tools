@@ -45,7 +45,7 @@ function formatTokens(count: number): string {
 	return `${(count / 1_000_000).toFixed(1)}M`
 }
 
-const THINKING_DOTS = 5
+const THINKING_DOTS = 6
 
 function thinkingFill(level: string): number {
 	const map: Record<string, number> = {
@@ -55,6 +55,7 @@ function thinkingFill(level: string): number {
 		medium: 3,
 		high: 4,
 		xhigh: 5,
+		max: 6,
 	}
 	const raw = map[level] ?? 0
 	return Math.max(0, Math.min(THINKING_DOTS, raw))
@@ -93,7 +94,7 @@ const RIGHT_EDGE_RAIL = "▕"
 
 function readFastModeState(ctx: any): { active: boolean; serviceTier: string } {
 	const lastState = ctx.sessionManager
-		.getEntries()
+		.getBranch()
 		.filter(
 			(entry: { type?: string; customType?: string }) =>
 				entry.type === "custom" &&

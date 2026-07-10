@@ -10,8 +10,8 @@ Use this skill when a task is complex enough that isolation, parallelism, broad-
 ## Core cost / usage discipline
 
 - Default to OpenAI models unless the user explicitly requests another provider.
-- Default interactive sessions should use `openai-codex/gpt-5.5` with high reasoning.
-- Reserve `xhigh` for explicitly hard architecture, debugging, or review work.
+- Default interactive sessions should use `openai-codex/gpt-5.6-sol` with high reasoning.
+- Reserve `xhigh` for hard architecture, debugging, or review work and `max` for exceptional cases that explicitly warrant the highest supported reasoning level.
 - Before reading files, use `rg`, `find`, `git diff`, or targeted `bash` discovery to identify the smallest relevant files/line ranges.
 - Avoid full-file reads for large files unless the whole file is genuinely needed.
 - Prefer `read` with `offset`/`limit` and cite the ranges inspected when useful.
@@ -64,7 +64,7 @@ Avoid subagents for:
 
 ## Routing defaults
 
-- Keep OpenAI Codex/GPT models as the default for primary orchestration, high-risk implementation, final synthesis, and user-facing decisions unless the user explicitly requests another provider.
+- Keep OpenAI Codex/GPT models as the default for primary orchestration, high-risk implementation, final synthesis, and user-facing decisions unless the user explicitly requests another provider. Use GPT-5.6 Luna for fast scouting/verification, Terra for balanced coordination/implementation, and Sol for deep planning/review/architecture.
 - Prefer DeepSeek v4 Flash for fast, low-risk scouting, repo recon, noisy log/test triage, and parallel context gathering:
   - agents: `ds-scout`, `ds-triage`
   - model override: `deepseek/deepseek-v4-flash`
@@ -77,7 +77,7 @@ Avoid subagents for:
   - hard review/architecture/deep reasoning: `model: "opus"` or `category: "claude-deep"` / `"claude-review"`
   - balanced planning/implementation: `model: "sonnet"`
   - fast scouting: `model: "haiku"` or `category: "claude-quick"`
-- For risky subagent calls, include fallback models such as `openai-codex/gpt-5.5`, `sonnet`, or `opus` so provider/model failures do not block progress.
+- For risky subagent calls, include nearby GPT-5.6 tiers, `sonnet`, or `opus` as fallbacks so provider/model failures do not block progress.
 - For longer-running or unstable routes, use `background: true`, then monitor/fetch results with `subagent_jobs`.
 
 ## Parallel and background workflow

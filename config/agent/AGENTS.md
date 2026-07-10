@@ -1,7 +1,7 @@
 ## Core Operating Defaults
 
 - Default to OpenAI models unless the user explicitly requests another provider.
-- Default interactive sessions should use `openai-codex/gpt-5.5` with high reasoning; reserve `xhigh` for explicitly hard architecture/debugging/review work.
+- Default interactive sessions should use `openai-codex/gpt-5.6-sol` with high reasoning; reserve `xhigh` for hard architecture/debugging/review work and `max` for exceptional cases that explicitly warrant the highest supported reasoning level.
 - Start with targeted discovery (`rg`, `find`, `git diff`, or focused `bash`) before reading files. Prefer `read` with `offset`/`limit` for large files and avoid repeated large reads.
 - For Git/worktree state, use the `git-agent-hygiene` skill when status/diff/staging/commit safety matters. Prefer `git status --short --branch --untracked-files=all`; remember `git diff` omits untracked files and `git diff --cached` is needed for staged changes.
 - Keep shell output small. For noisy commands, redirect full logs to `/tmp` and print concise summaries/tails/errors.
@@ -26,7 +26,7 @@
 - When the user asks for Claude/Anthropic or to make use of an active Claude subscription, use subagent `model` aliases (`opus`, `sonnet`, `haiku`) or categories (`claude-quick`, `claude-deep`, `claude-review`, `claude-ultrabrain`) as appropriate.
 - Prefer `anthropic/claude-opus-4-8` (alias `opus`) for hard review/architecture/deep reasoning, `anthropic/claude-sonnet-4-6` (alias `sonnet`) for balanced planning/implementation, and `anthropic/claude-haiku-4-5` (alias `haiku`) for fast scouting when available.
 - Prefer `background: true` for longer-running or unstable subagent routes; monitor/fetch results with `subagent_jobs`.
-- Include fallback models such as `openai-codex/gpt-5.5` or `sonnet`/`opus` for risky subagent calls so provider/model failures do not block progress.
+- Route GPT-5.6 subagents by cost/capability: `luna` for fast scouting/verification, `terra` for balanced coordination/implementation, and `sol` for deep planning/review/architecture. Include nearby GPT-5.6 tiers or `sonnet`/`opus` as fallbacks for risky calls.
 
 ## Conversational Style
 

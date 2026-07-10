@@ -28,6 +28,7 @@ const THINKING_LEVELS = [
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ] as const
 const DEFAULT_MAX_CONCURRENCY = 4
 const HARD_MAX_CONCURRENCY = 10

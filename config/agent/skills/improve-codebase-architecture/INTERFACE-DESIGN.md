@@ -21,7 +21,7 @@ Include a tiny illustrative sketch only if it clarifies constraints. Label it as
 
 ## Step 2 — Generate intentionally different designs
 
-Use pi subagents when designs can be explored independently. Default to `openai-codex/gpt-5.5` unless the user requests another model.
+Use pi subagents when designs can be explored independently. Default to `openai-codex/gpt-5.6-sol` unless the user requests another model.
 
 Ask each subagent for a different design constraint:
 

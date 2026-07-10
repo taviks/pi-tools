@@ -1681,6 +1681,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
 	})
 
 	let runMemoryState: { prompt: string; captured: boolean } | undefined
+	let pendingSettledMessages: unknown[] = []
 	let lastRunSnapshot: LastRunSnapshot | undefined
 	let pendingHarvest: PendingHarvest | undefined
 	let reminderOverride: boolean | undefined
@@ -1740,30 +1741,40 @@ export default function memoryExtension(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const prompt = typeof event.prompt === "string" ? event.prompt : ""
-		runMemoryState = { prompt, captured: false }
+		if (!runMemoryState) {
+			runMemoryState = { prompt, captured: false }
+			pendingSettledMessages = []
+		}
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${buildMemoryTurnGuidance(ctx.cwd, prompt)}`,
 		}
 	})
 
-	pi.on("agent_end", async (event, ctx) => {
+	pi.on("agent_end", (event) => {
+		if (!runMemoryState) return
+		pendingSettledMessages.push(...event.messages)
+	})
+
+	pi.on("agent_settled", async (_event, ctx) => {
 		const state = runMemoryState
+		const messages = pendingSettledMessages
 		runMemoryState = undefined
+		pendingSettledMessages = []
 		if (!state) return
-		const assistantText = finalAssistantText(event.messages)
-		const snapshot = {
+
+		const snapshot: LastRunSnapshot = {
 			prompt: state.prompt,
-			assistantText,
-			messages: event.messages,
+			assistantText: finalAssistantText(messages),
+			messages,
 			createdAt: new Date().toISOString(),
 		}
 		lastRunSnapshot = snapshot
 		if (
 			!state.captured &&
 			shouldSuggestPostRunCapture(
-				state.prompt,
-				assistantText,
-				event.messages,
+				snapshot.prompt,
+				snapshot.assistantText,
+				snapshot.messages,
 			)
 		) {
 			const queued = queueMemoryCandidates(

@@ -1,6 +1,6 @@
 # Allowlisted Web Access for Pi
 
-Project-local Pi extension for read-only, whitelist-gated web access. Loaded from `~/example-project/.pi/settings.json` as `../path/to/pi-tools/packages/allowlisted-web`, with a user-wide allowlist config.
+Project-local Pi extension for read-only, whitelist-gated web access. Install it from the project with `pi install -l /absolute/path/to/pi-tools/packages/allowlisted-web` (or use a `~/...` package path in `.pi/settings.json`), with a user-wide allowlist config.
 
 ## Tools and commands
 

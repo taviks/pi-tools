@@ -2,7 +2,7 @@
 name: improve-codebase-architecture
 description: Pi workflow for evidence-backed architecture reviews and deepening opportunities. Use when asked to improve architecture, identify shallow modules, refine seams/adapters, consolidate tightly coupled code, improve testability, or make a codebase easier for AI agents to navigate.
 license: MIT
-compatibility: Optimized for pi subagents and openai-codex/gpt-5.5; usable serially by other models and harnesses.
+compatibility: Optimized for pi subagents and openai-codex/gpt-5.6-sol; usable serially by other models and harnesses.
 metadata:
   upstream: https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md
   adapted-for: pi
@@ -38,7 +38,7 @@ Do not use for straightforward bug fixes unless architecture is part of the requ
 - Do not propose final interfaces until the user chooses a candidate.
 - Do not edit code, `CONTEXT.md`, or ADRs unless the user explicitly approves.
 - Do not implement refactors until the user asks for implementation.
-- If using pi subagents, default to `openai-codex/gpt-5.5` unless the user requests another model.
+- If using pi subagents, default to `openai-codex/gpt-5.6-sol` unless the user requests another model.
 
 ## Read these skill references
 
@@ -52,9 +52,9 @@ Read these when relevant:
 - [ADR-FORMAT.md](ADR-FORMAT.md) — before proposing or creating ADRs.
 - [PROMPTS.md](PROMPTS.md) — copyable pi subagent prompts.
 
-## GPT-5.5 operating discipline
+## GPT-5.6 Sol operating discipline
 
-GPT-5.5 is strong at synthesis but can jump to polished abstractions too early. Keep it phase-bound:
+GPT-5.6 Sol is strong at synthesis but can jump to polished abstractions too early. Keep it phase-bound:
 
 1. Evidence first.
 2. Candidate directions second.

@@ -38,6 +38,7 @@ const THINKING_VALUES = new Set<BtwThinking>([
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 	"current",
 ])
 
@@ -83,7 +84,7 @@ function parseBtwArgs(args: string): ParsedBtwArgs {
 		}
 
 		const thinkingMatch = token.match(
-			/^--think(?:ing)?=(off|minimal|low|medium|high|xhigh|current)$/,
+			/^--think(?:ing)?=(off|minimal|low|medium|high|xhigh|max|current)$/,
 		)
 		if (thinkingMatch) {
 			thinking = thinkingMatch[1] as BtwThinking

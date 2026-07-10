@@ -3,6 +3,7 @@ import * as path from "node:path"
 import { StringEnum } from "@earendil-works/pi-ai"
 import {
 	getAgentDir,
+	SettingsManager,
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent"
@@ -48,6 +49,7 @@ const THINKING_LEVELS = [
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ] as const
 
 const ThinkingLevelSchema = StringEnum(THINKING_LEVELS, {
@@ -262,42 +264,13 @@ function availableModelIds(ctx?: ExtensionContext): string[] {
 	)
 }
 
-function readEnabledFromFile(file: string): string[] {
-	try {
-		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
-			enabledModels?: unknown
-		}
-		return Array.isArray(parsed.enabledModels)
-			? parsed.enabledModels.filter(
-					(s): s is string => typeof s === "string" && s.trim().length > 0,
-				)
-			: []
-	} catch {
-		return []
-	}
-}
-
-/** User-curated enabled models from global + nearest project settings. */
-function enabledModelIds(cwd: string): string[] {
-	const out = new Set<string>()
-	try {
-		for (const id of readEnabledFromFile(
-			path.join(getAgentDir(), "settings.json"),
-		))
-			out.add(id)
-	} catch {}
-	let dir = cwd
-	while (true) {
-		const file = path.join(dir, ".pi", "settings.json")
-		if (fs.existsSync(file)) {
-			for (const id of readEnabledFromFile(file)) out.add(id)
-			break
-		}
-		const parent = path.dirname(dir)
-		if (parent === dir) break
-		dir = parent
-	}
-	return [...out]
+/** User-curated enabled models with Pi's global/project precedence. */
+function enabledModelIds(ctx: ExtensionContext): string[] {
+	return (
+		SettingsManager.create(ctx.cwd, getAgentDir(), {
+			projectTrusted: ctx.isProjectTrusted(),
+		}).getEnabledModels() ?? []
+	)
 }
 
 function excludePatterns(): string[] {
@@ -317,7 +290,7 @@ function excludePatterns(): string[] {
 function candidatePool(ctx: ExtensionContext): string[] {
 	const available = availableModelIds(ctx)
 	const availableSet = new Set(available)
-	const enabled = enabledModelIds(ctx.cwd)
+	const enabled = enabledModelIds(ctx)
 	let pool =
 		enabled.length > 0
 			? enabled.filter(
@@ -1197,7 +1170,7 @@ export default function fusionExtension(pi: ExtensionAPI) {
 			"Use fusion only for genuinely hard or high-stakes questions where cross-model deliberation is worth the cost; it runs several models plus a judge.",
 			"Do not use fusion as a default; prefer a single model for routine questions.",
 			"No mode is needed for code vs research: panelists ground in the codebase and/or the web on their own, and the scout pre-pass auto-grounds codebase questions.",
-			"Set a higher thinkingLevel (high/xhigh) for deep analytical or architecture prompts; lower (medium) for broad/shallow breadth questions. Panelists and judge default to high.",
+			"Set a higher thinkingLevel (high/xhigh/max) for deep analytical or architecture prompts; lower (medium) for broad/shallow breadth questions. Panelists and judge default to high.",
 			"Prefer a cross-provider panel; same-family panels give weak disagreement signal.",
 			"Web search requires the pi-web-search package and TAVILY_API_KEY; pass web:false to forbid it.",
 		],

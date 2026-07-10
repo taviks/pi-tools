@@ -13,7 +13,6 @@ import {
 
 import { installSlashCommandArgumentAutocomplete } from "../lib/slash-command-autocomplete"
 
-const STATE_ENTRY_TYPE = "effort-state"
 const LEVEL_CHOICES: readonly ThinkingLevel[] = [
 	"off",
 	"minimal",
@@ -21,6 +20,7 @@ const LEVEL_CHOICES: readonly ThinkingLevel[] = [
 	"medium",
 	"high",
 	"xhigh",
+	"max",
 ]
 const LEVEL_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	off: "No reasoning",
@@ -29,10 +29,7 @@ const LEVEL_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	medium: "Moderate reasoning",
 	high: "Deep reasoning",
 	xhigh: "Extra-deep reasoning (selected models only)",
-}
-
-interface PersistedEffortState {
-	maxActive?: unknown
+	max: "Maximum reasoning (selected models only)",
 }
 
 function isThinkingLevel(value: unknown): value is ThinkingLevel {
@@ -43,94 +40,18 @@ function modelLabel(model: Model<any> | undefined): string {
 	return model ? `${model.provider}/${model.id}` : "no model"
 }
 
-function modelLooksClaudeLike(model: Model<any> | undefined): boolean {
-	if (!model) return false
-	const provider = model.provider.toLowerCase()
-	const id = model.id.toLowerCase()
-	return (
-		provider.includes("anthropic") ||
-		provider.includes("claude") ||
-		id.includes("claude")
-	)
-}
-
 function supportedLevels(model: Model<any> | undefined): ThinkingLevel[] {
 	if (!model) return [...LEVEL_CHOICES]
 	return getSupportedThinkingLevels(model) as ThinkingLevel[]
 }
 
-/** Highest reasoning level the model supports, or undefined for non-reasoning models. */
-function resolveMaxLevel(
-	model: Model<any> | undefined,
-): ThinkingLevel | undefined {
-	if (!model?.reasoning) return undefined
-	const levels = supportedLevels(model).filter((level) => level !== "off")
-	return levels.length > 0 ? levels[levels.length - 1] : undefined
-}
-
-function supportsMaxEffort(model: Model<any> | undefined): boolean {
-	// "max" is a Claude Code effort level, not a generic Pi/OpenAI thinking
-	// level. Pi can only apply it as a Claude-scoped alias to the highest native
-	// thinking level exposed for the current Claude-family model.
-	return modelLooksClaudeLike(model) && resolveMaxLevel(model) !== undefined
-}
-
-function effortChoices(
-	model: Model<any> | undefined,
-): Array<ThinkingLevel | "max"> {
-	const choices: Array<ThinkingLevel | "max"> = supportedLevels(model)
-	if (supportsMaxEffort(model)) choices.push("max")
-	return choices
-}
-
 export default function effortExtension(pi: ExtensionAPI) {
-	// When true, "max" is sticky: model switches re-resolve to the new model's
-	// highest supported reasoning level instead of keeping a stale clamp.
-	let maxActive = false
 	let completionModel: Model<any> | undefined
-
-	const persistState = () => {
-		pi.appendEntry(STATE_ENTRY_TYPE, {
-			maxActive,
-		} satisfies { maxActive: boolean })
-	}
-
-	const restoreStateFromSession = (ctx: ExtensionContext) => {
-		maxActive = false
-		const lastState = ctx.sessionManager
-			.getEntries()
-			.filter(
-				(entry: { type?: string; customType?: string }) =>
-					entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE,
-			)
-			.pop() as { data?: PersistedEffortState } | undefined
-		if (lastState?.data?.maxActive === true) maxActive = true
-	}
-
-	const applyMax = (ctx: ExtensionContext, model: Model<any> | undefined) => {
-		const target = resolveMaxLevel(model)
-		if (!supportsMaxEffort(model) || !target) {
-			ctx.ui.notify(
-				`Effort max is a Claude-only option and is not available for ${modelLabel(model)}.`,
-				"warning",
-			)
-			return
-		}
-		pi.setThinkingLevel(target)
-		ctx.ui.notify(
-			`Effort max → thinking:${target} · ${modelLabel(model)} · follows Claude model switches`,
-			"info",
-		)
-	}
 
 	const setExplicitLevel = (
 		ctx: ExtensionContext,
 		requested: ThinkingLevel,
 	) => {
-		if (maxActive) {
-			maxActive = false
-			persistState()
-		}
 		pi.setThinkingLevel(requested)
 		const actual = pi.getThinkingLevel()
 		if (actual !== requested) {
@@ -147,17 +68,9 @@ export default function effortExtension(pi: ExtensionAPI) {
 	}
 
 	const showStatus = (ctx: ExtensionContext) => {
-		const available = effortChoices(ctx.model)
-		const maxTarget = resolveMaxLevel(ctx.model)
-		const maxInfo = supportsMaxEffort(ctx.model)
-			? maxActive
-				? `max:on (→ ${maxTarget})`
-				: `max:off (would → ${maxTarget})`
-			: maxActive
-				? "max:on (paused; current model has no Claude max option)"
-				: "max:unavailable"
+		const available = supportedLevels(ctx.model)
 		ctx.ui.notify(
-			`Effort · thinking:${pi.getThinkingLevel()} · ${maxInfo} · ${modelLabel(ctx.model)} · available: ${available.join(", ")}`,
+			`Effort · thinking:${pi.getThinkingLevel()} · ${modelLabel(ctx.model)} · available: ${available.join(", ")}`,
 			"info",
 		)
 	}
@@ -169,15 +82,6 @@ export default function effortExtension(pi: ExtensionAPI) {
 				value: level,
 				description: LEVEL_DESCRIPTIONS[level],
 			})),
-			...(supportsMaxEffort(completionModel)
-				? [
-						{
-							value: "max",
-							description:
-								"Claude max effort; maps to this model's highest Pi thinking level",
-						},
-					]
-				: []),
 			{ value: "status", description: "Show current effort state" },
 		]
 		const items = choices
@@ -190,39 +94,19 @@ export default function effortExtension(pi: ExtensionAPI) {
 		return items.length > 0 ? items : null
 	}
 
-	const applyPick = (ctx: ExtensionContext, picked: ThinkingLevel | "max") => {
-		if (picked === "max") {
-			if (!supportsMaxEffort(ctx.model)) {
-				ctx.ui.notify(
-					`Effort max is a Claude-only option and is not available for ${modelLabel(ctx.model)}.`,
-					"warning",
-				)
-				return
-			}
-			if (!maxActive) {
-				maxActive = true
-				persistState()
-			}
-			applyMax(ctx, ctx.model)
-			return
-		}
+	const applyPick = (ctx: ExtensionContext, picked: ThinkingLevel) => {
 		setExplicitLevel(ctx, picked)
 	}
 
 	const openEffortPicker = async (ctx: ExtensionContext) => {
-		const choices = effortChoices(ctx.model)
-		// Default to "max" while max mode is active (it tracks the resolved max
-		// for the current model); otherwise highlight the current thinking level.
+		const choices = supportedLevels(ctx.model)
 		const current = pi.getThinkingLevel()
-		const initialIndex =
-			maxActive && supportsMaxEffort(ctx.model)
-				? choices.indexOf("max")
-				: Math.max(0, choices.indexOf(current))
+		const initialIndex = Math.max(0, choices.indexOf(current))
 
 		ctx.ui.setWorkingVisible(false)
-		let picked: ThinkingLevel | "max" | null
+		let picked: ThinkingLevel | null
 		try {
-			picked = await ctx.ui.custom<ThinkingLevel | "max" | null>(
+			picked = await ctx.ui.custom<ThinkingLevel | null>(
 				(tui, theme, _keybindings, done) => {
 					let selected = initialIndex
 
@@ -315,42 +199,29 @@ export default function effortExtension(pi: ExtensionAPI) {
 			showStatus(ctx)
 			return
 		}
-		if (normalized === "max" || isThinkingLevel(normalized)) {
+		if (isThinkingLevel(normalized)) {
 			applyPick(ctx, normalized)
 			return
 		}
 
 		ctx.ui.notify(
-			`Unknown /effort level "${normalized}". Use: ${LEVEL_CHOICES.join(", ")}, max, status.`,
+			`Unknown /effort level "${normalized}". Use: ${LEVEL_CHOICES.join(", ")}, status.`,
 			"error",
 		)
 	}
 
 	pi.on("session_start", (_event, ctx) => {
 		completionModel = ctx.model
-		restoreStateFromSession(ctx)
 		installSlashCommandArgumentAutocomplete(ctx, "effort", commandItems)
 	})
 
-	pi.on("model_select", (event, ctx) => {
+	pi.on("model_select", (event) => {
 		completionModel = event.model
-		if (!maxActive) return
-		applyMax(ctx, event.model)
-	})
-
-	pi.on("thinking_level_select", (event, ctx) => {
-		if (!maxActive) return
-		// Levels equal to the model's max are consistent with max mode. This also
-		// covers the session's own re-clamp on model switch, which fires before
-		// model_select; anything else is a manual override that ends max mode.
-		if (event.level === resolveMaxLevel(ctx.model)) return
-		maxActive = false
-		persistState()
 	})
 
 	pi.registerCommand("effort", {
 		description:
-			"Set reasoning effort. Usage: /effort [off|minimal|low|medium|high|xhigh|status]; Claude models also support max; no argument opens an interactive picker",
+			"Set reasoning effort. Usage: /effort [off|minimal|low|medium|high|xhigh|max|status]; no argument opens an interactive picker",
 		getArgumentCompletions: commandItems,
 		handler: async (args, ctx) => {
 			await runAction(args, ctx)

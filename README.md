@@ -28,11 +28,13 @@ Add the root package and any companion packages you want to `~/.pi/agent/setting
 }
 ```
 
-For a project-local allowlisted web fetch tool, add this to that project's `.pi/settings.json`:
+For a project-local allowlisted web fetch tool, install it into that project's settings with an absolute path:
 
-```json
-{ "packages": ["../path/to/pi-tools/packages/allowlisted-web"] }
+```bash
+pi install -l /absolute/path/to/pi-tools/packages/allowlisted-web
 ```
+
+The equivalent `.pi/settings.json` entry can use `~/path/to/pi-tools/packages/allowlisted-web`; relative paths resolve from the `.pi` directory.
 
 Run `/reload` in Pi after changing package paths.
 
@@ -62,7 +64,7 @@ Ready notifications prefer terminal-native toast protocols when available (Ghost
 
 Goal loop can be started explicitly with `/goal <objective>`. It also auto-starts from a `Goal:`/`goal:` prompt header when no goal is already active; if the header has no same-line text, the next non-empty line block is used as the objective.
 
-`/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Claude-family models also show `/effort max`, which maps Claude Code's max effort to the highest Pi thinking level exposed by that model and stays sticky across Claude model switches until a level is picked explicitly. `/effort status` shows the current level, max-mode state, and available levels.
+`/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); Pi 0.80.6 exposes `max` only for models that support it, including GPT-5.6 and adaptive Claude models. `/effort status` shows the current level and available levels.
 
 The reload session-state extension snapshots the active session's model and thinking level before `/reload` and `/new`, then restores them after the session transition. This avoids another Pi pane's most recently saved global defaults leaking into the active pane when multiple sessions use different models or reasoning levels.
 

@@ -34,7 +34,7 @@ Close with `Esc`, `Enter`, or `q`.
 
 The Codex `wham/usage` endpoint only reports the standard 5h/weekly windows. It
 does **not** expose the per-feature **premium** rate-limit bucket that premium
-models (e.g. `gpt-5.5`) burn — so `/usage` (and the ChatGPT/Codex app) can show
+models (e.g. `gpt-5.6-sol` or `gpt-5.5`) burn — so `/usage` (and the ChatGPT/Codex app) can show
 "60% left" while a premium request is actually rejected with a 429.
 
 That premium bucket only appears in the `X-Codex-*` headers of a real 429, which

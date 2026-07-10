@@ -11,6 +11,7 @@ required=(
   packages/allowlisted-web
   packages/pi-web-search
   config/agent/AGENTS.md
+  config/agent/keybindings.json
   config/agent/agents
   config/agent/prompts
   config/agent/skills

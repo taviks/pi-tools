@@ -10,14 +10,14 @@ Installed from Pi's official `examples/extensions/subagent` and customized for l
   - explicit `model` overrides,
   - explicit `thinkingLevel` overrides,
   - optional `category` routing (e.g. `quick`, `deep`, `review`, `visual-engineering`, `claude-quick`, `claude-deep`, `claude-review`),
-  - agent-type model hierarchy defaults (`openai-codex/gpt-5.5` across coordinator/planner/worker/reviewer/scout unless explicitly overridden, with Claude fallback candidates when available)
+  - cost-tiered GPT-5.6 hierarchy defaults (`luna` for scout/verifier, `terra` for coordinator/worker, `sol` for planner/reviewer, with older OpenAI and Claude fallback candidates when available)
   - agent/category thinking defaults (`scout=low`, `worker=medium`, `planner=high`, `reviewer=high`, `coordinator=medium`; visual/design/Claude review categories use `high`)
 - optional fallback chain via `fallbackModels` (single/per-task/per-step); built-ins include OpenAI and Anthropic/Claude candidates
-- Claude-friendly model aliases in `model`/`fallbackModels`: `opus`, `sonnet`, `haiku`, `claude-opus`, `claude-sonnet`, `claude-haiku`
+- model aliases in `model`/`fallbackModels`: `sol`, `terra`, `luna`, plus Claude aliases `opus`, `sonnet`, `haiku`, `claude-opus`, `claude-sonnet`, `claude-haiku`
 - built-in fallback candidates are filtered against the live model registry; unavailable built-ins are skipped quietly, while unavailable explicit model/fallback requests are reported
 - retry-on-retryable-failure with model cooldown before fallback reuse
 - execution concurrency caps per provider/model for safer parallel load
-- inherited `/fast` state for spawned GPT-5.5/GPT-5.4 subagent processes (passes the OpenAI priority service tier env through explicitly)
+- inherited `/fast` state for spawned GPT-5.6/GPT-5.5/GPT-5.4 subagent processes (passes the OpenAI priority service tier env through explicitly)
 - unstable model/category auto-background (`forceBackgroundForUnstable`, default `true`)
 - `subagent_jobs` tool for job list/status/result/cancel/wait-all/clear + widget-config/widget-set
   - `result` output includes per-agent model/attempts and fallback retry logs when applicable
@@ -47,9 +47,9 @@ Bundled in `agents/`:
 - Check one job: `/subjobs <jobId>`
 - Wait for all jobs in a tool call: `subagent_jobs` with `action: "wait-all"`
 - Route by category in tool calls: `category` (`quick`, `deep`, `review`, `visual-engineering`, `claude-quick`, `claude-deep`, `claude-review`, ...)
-- Use Claude directly with `model: "opus" | "sonnet" | "haiku"` or canonical ids like `anthropic/claude-opus-4-8`
-- Override reasoning explicitly when needed: `thinkingLevel: "low" | "medium" | "high" | "xhigh"`
-- Add explicit fallback chain when needed: `fallbackModels: ["opus", "sonnet", "openai-codex/gpt-5.5"]`
+- Use GPT-5.6 tiers directly with `model: "sol" | "terra" | "luna"`, or Claude with `model: "opus" | "sonnet" | "haiku"`
+- Override reasoning explicitly when needed: `thinkingLevel: "low" | "medium" | "high" | "xhigh" | "max"`
+- Add an explicit fallback chain when needed: `fallbackModels: ["sol", "terra", "luna", "opus"]`
 - Unstable routes auto-queue in background unless `forceBackgroundForUnstable: false`
 - Clear finished jobs: `/subjobs clear`
 - Switch widget density: `/subjobs view detailed` or `/subjobs view compact`

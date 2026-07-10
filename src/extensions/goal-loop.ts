@@ -678,6 +678,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 	let continuationTimer: ReturnType<typeof setTimeout> | undefined
 	let activeTurnStartedAt: number | undefined
 	let activeIterationStartedAt: number | undefined
+	let pendingSettledError: AssistantMessage | undefined
 	let controlMessageAllowance = 0
 	let awaitingControlTurn = false
 	let nextControlNonce = 0
@@ -998,6 +999,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 			iterationDurationsSeconds: [],
 		}
 		activeIterationStartedAt = undefined
+		pendingSettledError = undefined
 		persistState()
 		updateUI(ctx)
 	}
@@ -1090,6 +1092,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		clearContinuationTimer()
 		state = defaultState()
 		activeIterationStartedAt = undefined
+		pendingSettledError = undefined
 		persistState()
 		updateUI(ctx)
 		if (ctx.hasUI) ctx.ui.notify(note, "info")
@@ -1114,6 +1117,51 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 				],
 			},
 			ctx,
+		)
+	}
+
+	const handleSettledAgentError = (
+		message: AssistantMessage,
+		ctx: ExtensionContext,
+	) => {
+		const errorMessage = normalizeAgentErrorMessage(message)
+		const errorDetails = agentErrorDetails(message)
+		const signature = errorSignature(`${errorMessage}\n${errorDetails}`)
+		const consecutiveErrors =
+			signature === state.lastErrorSignature
+				? state.consecutiveErrors + 1
+				: 1
+		const shortError = truncate(errorMessage, 220)
+		setState(
+			{
+				turns: state.turns + 1,
+				lastErrorSignature: signature,
+				lastErrorDetails: errorDetails,
+				consecutiveErrors,
+			},
+			ctx,
+			{ persist: false },
+		)
+		if (isActionableAgentError(errorMessage)) {
+			pauseWithNote(
+				ctx,
+				"blocked",
+				`Agent error needs attention: ${shortError}`,
+			)
+			return
+		}
+		if (consecutiveErrors >= 3) {
+			pauseWithNote(
+				ctx,
+				"blocked",
+				`Same agent error repeated ${consecutiveErrors} times: ${shortError}`,
+			)
+			return
+		}
+		pauseWithNote(
+			ctx,
+			"interrupted",
+			`Agent runtime error: ${shortError}. Use /goal resume or say “continue” to retry.`,
 		)
 	}
 
@@ -1411,6 +1459,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		restoreStateFromSession(ctx)
 		activeTurnStartedAt = undefined
 		activeIterationStartedAt = undefined
+		pendingSettledError = undefined
 		controlMessageAllowance = 0
 		awaitingControlTurn = false
 		expectedControlNonce = undefined
@@ -1432,6 +1481,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		clearContinuationTimer()
 		activeTurnStartedAt = undefined
 		activeIterationStartedAt = undefined
+		pendingSettledError = undefined
 		controlMessageAllowance = 0
 		awaitingControlTurn = false
 		expectedControlNonce = undefined
@@ -1571,6 +1621,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		const text = getTextContent(event.message)
 		const marker = parseGoalMarker(text)
 		const stopReason = event.message.stopReason
+		if (stopReason !== "error") pendingSettledError = undefined
 		const hasToolCalls =
 			event.toolResults.length > 0 ||
 			event.message.content.some((block) => block.type === "toolCall")
@@ -1583,45 +1634,7 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		}
 
 		if (stopReason === "error") {
-			const errorMessage = normalizeAgentErrorMessage(event.message)
-			const errorDetails = agentErrorDetails(event.message)
-			const signature = errorSignature(`${errorMessage}\n${errorDetails}`)
-			const consecutiveErrors =
-				signature === state.lastErrorSignature
-					? state.consecutiveErrors + 1
-					: 1
-			const shortError = truncate(errorMessage, 220)
-			setState(
-				{
-					turns: nextTurns,
-					lastErrorSignature: signature,
-					lastErrorDetails: errorDetails,
-					consecutiveErrors,
-				},
-				ctx,
-				{ persist: false },
-			)
-			if (isActionableAgentError(errorMessage)) {
-				pauseWithNote(
-					ctx,
-					"blocked",
-					`Agent error needs attention: ${shortError}`,
-				)
-				return
-			}
-			if (consecutiveErrors >= 3) {
-				pauseWithNote(
-					ctx,
-					"blocked",
-					`Same agent error repeated ${consecutiveErrors} times: ${shortError}`,
-				)
-				return
-			}
-			pauseWithNote(
-				ctx,
-				"interrupted",
-				`Agent runtime error: ${shortError}. Use /goal resume or say “continue” to retry.`,
-			)
+			pendingSettledError = event.message
 			return
 		}
 
@@ -1732,8 +1745,12 @@ export default function goalLoopExtension(pi: ExtensionAPI): void {
 		)
 	})
 
-	pi.on("agent_end", (_event, ctx) => {
+	pi.on("agent_settled", (_event, ctx) => {
 		latestContext = ctx
+		const settledError = pendingSettledError
+		pendingSettledError = undefined
+		if (settledError && state.status === "running")
+			handleSettledAgentError(settledError, ctx)
 		finishActiveIteration(ctx)
 		if (state.status !== "running") return
 		scheduleContinuation(ctx, state.lastNote)

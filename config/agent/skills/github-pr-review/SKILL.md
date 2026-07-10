@@ -1,7 +1,7 @@
 ---
 name: github-pr-review
 description: Review a GitHub pull request from a PR link. Use when the user gives a GitHub PR URL and wants an evidence-backed review for bugs, regressions, missing tests, risk areas, and author-facing feedback.
-compatibility: Optimized for pi subagents and openai-codex/gpt-5.5; works serially with gh CLI or a pasted diff.
+compatibility: Optimized for pi subagents and openai-codex/gpt-5.6-sol; works serially with gh CLI or a pasted diff.
 allowed-tools: read bash subagent subagent_jobs
 ---
 
@@ -44,9 +44,9 @@ Read [PROMPTS.md](PROMPTS.md) when delegating to pi subagents.
 - Prefer a few high-signal findings over a long list of speculative nitpicks.
 - If you cannot access the PR, ask for authentication, repo access, or a pasted diff.
 
-## GPT-5.5 operating discipline
+## GPT-5.6 Sol operating discipline
 
-GPT-5.5 is strong at pattern matching and synthesis, but can overstate uncertain regressions. Use this discipline:
+GPT-5.6 Sol is strong at pattern matching and synthesis, but can overstate uncertain regressions. Use this discipline:
 
 1. **Facts first**: PR metadata, changed files, diff, tests, surrounding code.
 2. **Intent second**: what the PR claims to do.
@@ -160,7 +160,7 @@ For nontrivial PRs, delegate independent review slices:
 - security/permissions,
 - data/migrations/config.
 
-Use `scout` for context gathering and `reviewer` for issue review. Default to `openai-codex/gpt-5.5`. Use [PROMPTS.md](PROMPTS.md).
+Use `scout` for context gathering and `reviewer` for issue review. Default to `openai-codex/gpt-5.6-sol`. Use [PROMPTS.md](PROMPTS.md).
 
 If background subagents are used, call `subagent_jobs` with `action: "wait-all"` before final synthesis.
 

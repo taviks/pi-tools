@@ -1,14 +1,11 @@
 import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename } from "node:path"
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionContext,
 	Theme,
 } from "@earendil-works/pi-coding-agent"
-import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai"
 import {
 	matchesKey,
 	truncateToWidth,
@@ -44,33 +41,7 @@ const TOAST_TITLE = "Pi done"
 const ERROR_TOAST_TITLE = "Pi error"
 const TOAST_RESPONSE_PREVIEW_MAX = 120
 const NOTIFICATION_SETTLE_DELAY_MS = 150
-const COMPACTION_NOTIFICATION_GRACE_MS = 5000
 const FOCUS_SIGNAL_STALE_MS = 5 * 60 * 1000
-
-interface RetrySettings {
-	enabled: boolean
-	maxRetries: number
-}
-
-interface CompactionSettings {
-	enabled: boolean
-	reserveTokens: number
-}
-
-const DEFAULT_RETRY_SETTINGS: RetrySettings = {
-	enabled: true,
-	maxRetries: 3,
-}
-
-const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
-	enabled: true,
-	reserveTokens: 16384,
-}
-
-const NON_RETRYABLE_PROVIDER_LIMIT_ERROR =
-	/GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i
-const RETRYABLE_AGENT_ERROR =
-	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|websocket.?closed|websocket.?error|other side closed|fetch failed|upstream.?connect|reset before headers|socket hang up|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i
 
 function execDetached(command: string, args: string[], onError?: () => void) {
 	try {
@@ -237,87 +208,6 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 	return value as Record<string, unknown>
 }
 
-function mergeRecords(
-	base: Record<string, unknown>,
-	overrides: Record<string, unknown>,
-): Record<string, unknown> {
-	const result: Record<string, unknown> = { ...base }
-	for (const [key, overrideValue] of Object.entries(overrides)) {
-		const baseValue = asObject(result[key])
-		const overrideRecord = asObject(overrideValue)
-		result[key] =
-			baseValue && overrideRecord
-				? mergeRecords(baseValue, overrideRecord)
-				: overrideValue
-	}
-	return result
-}
-
-function readJsonObject(path: string): Record<string, unknown> {
-	try {
-		return asObject(JSON.parse(readFileSync(path, "utf8"))) ?? {}
-	} catch {
-		return {}
-	}
-}
-
-function expandTildePath(path: string): string {
-	if (path === "~") return homedir()
-	if (path.startsWith("~/") || path.startsWith("~\\"))
-		return join(homedir(), path.slice(2))
-	return path
-}
-
-function agentSettingsPath(): string {
-	const envDir = process.env.PI_CODING_AGENT_DIR
-	return join(
-		envDir ? expandTildePath(envDir) : join(homedir(), ".pi", "agent"),
-		"settings.json",
-	)
-}
-
-function readPiSettings(cwd: string): Record<string, unknown> {
-	return mergeRecords(
-		readJsonObject(agentSettingsPath()),
-		readJsonObject(join(cwd, ".pi", "settings.json")),
-	)
-}
-
-function numberSetting(value: unknown, fallback: number): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : fallback
-}
-
-function booleanSetting(value: unknown, fallback: boolean): boolean {
-	return typeof value === "boolean" ? value : fallback
-}
-
-function retrySettings(cwd: string): RetrySettings {
-	const retry = asObject(readPiSettings(cwd).retry)
-	return {
-		enabled: booleanSetting(retry?.enabled, DEFAULT_RETRY_SETTINGS.enabled),
-		maxRetries: Math.max(
-			0,
-			Math.floor(
-				numberSetting(retry?.maxRetries, DEFAULT_RETRY_SETTINGS.maxRetries),
-			),
-		),
-	}
-}
-
-function compactionSettings(cwd: string): CompactionSettings {
-	const compaction = asObject(readPiSettings(cwd).compaction)
-	return {
-		enabled: booleanSetting(
-			compaction?.enabled,
-			DEFAULT_COMPACTION_SETTINGS.enabled,
-		),
-		reserveTokens: numberSetting(
-			compaction?.reserveTokens,
-			DEFAULT_COMPACTION_SETTINGS.reserveTokens,
-		),
-	}
-}
-
 function truncatePreview(
 	text: string,
 	max = TOAST_RESPONSE_PREVIEW_MAX,
@@ -398,66 +288,6 @@ function errorToastBody(
 			assistantErrorMessage(message) ?? "Agent ended with an error",
 		),
 	].join("\n")
-}
-
-function sameCurrentModel(
-	message: AssistantRecord,
-	ctx: ExtensionContext,
-): boolean {
-	return Boolean(
-		ctx.model &&
-		message.provider === ctx.model.provider &&
-		message.model === ctx.model.id,
-	)
-}
-
-function isOverflowError(
-	message: AssistantRecord,
-	ctx: ExtensionContext,
-): boolean {
-	return (
-		sameCurrentModel(message, ctx) &&
-		isContextOverflow(
-			message as unknown as AssistantMessage,
-			ctx.model?.contextWindow ?? 0,
-		)
-	)
-}
-
-function isRetryableAgentError(
-	message: AssistantRecord,
-	ctx: ExtensionContext,
-): boolean {
-	const errorMessage = assistantErrorMessage(message)
-	if (message.stopReason !== "error" || !errorMessage) return false
-	if (isOverflowError(message, ctx)) return false
-	if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR.test(errorMessage)) return false
-	return RETRYABLE_AGENT_ERROR.test(errorMessage)
-}
-
-function shouldDeferForLikelyCompaction(
-	message: AssistantRecord | undefined,
-	ctx: ExtensionContext,
-): boolean {
-	if (
-		!message ||
-		message.stopReason === "error" ||
-		message.stopReason === "aborted"
-	)
-		return false
-	const settings = compactionSettings(ctx.cwd)
-	if (!settings.enabled) return false
-	const contextWindow = ctx.model?.contextWindow ?? 0
-	if (!contextWindow) return false
-	const usage = asObject(message.usage)
-	if (!usage) return false
-	const totalTokens = numberSetting(usage.totalTokens, 0)
-	const input = numberSetting(usage.input, 0)
-	const cacheRead = numberSetting(usage.cacheRead, 0)
-	const cacheWrite = numberSetting(usage.cacheWrite, 0)
-	const output = numberSetting(usage.output, 0)
-	const contextTokens = totalTokens || input + cacheRead + cacheWrite + output
-	return contextTokens > contextWindow - settings.reserveTokens
 }
 
 function toastBody(
@@ -656,17 +486,10 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	let focusSignalReceived = false
 	let lastFocusSignalAt = 0
 	let cleanupFocusTracking: (() => void) | undefined
-	let retryAttempt = 0
-	let overflowRecoveryAttempted = false
+	let latestAgentEndMessages: unknown
 	let notificationGeneration = 0
 	let pendingNotificationTimer: ReturnType<typeof setTimeout> | undefined
-	let pendingCompactionNotificationTimer:
-		| ReturnType<typeof setTimeout>
-		| undefined
 	let pendingNotification: { title: string; body: string } | undefined
-	let pendingNotificationAfterCompaction:
-		| { title: string; body: string }
-		| undefined
 
 	const emitState = () => {
 		pi.events.emit("notify:changed", current)
@@ -706,20 +529,11 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		terminalFocused &&
 		Date.now() - lastFocusSignalAt < FOCUS_SIGNAL_STALE_MS
 
-	const clearPendingCompactionNotificationTimer = () => {
-		if (pendingCompactionNotificationTimer) {
-			clearTimeout(pendingCompactionNotificationTimer)
-		}
-		pendingCompactionNotificationTimer = undefined
-	}
-
 	const clearPendingNotification = () => {
 		notificationGeneration++
 		if (pendingNotificationTimer) clearTimeout(pendingNotificationTimer)
 		pendingNotificationTimer = undefined
-		clearPendingCompactionNotificationTimer()
 		pendingNotification = undefined
-		pendingNotificationAfterCompaction = undefined
 	}
 
 	const scheduleNotification = (
@@ -745,63 +559,9 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		}, NOTIFICATION_SETTLE_DELAY_MS)
 	}
 
-	const scheduleNotificationAfterCompaction = (
-		ctx: ExtensionContext,
-		title: string,
-		body: string,
-	) => {
-		pendingNotificationAfterCompaction = { title, body }
-		clearPendingCompactionNotificationTimer()
-		pendingCompactionNotificationTimer = setTimeout(() => {
-			pendingCompactionNotificationTimer = undefined
-			const notification = pendingNotificationAfterCompaction
-			pendingNotificationAfterCompaction = undefined
-			if (notification)
-				scheduleNotification(ctx, notification.title, notification.body)
-		}, COMPACTION_NOTIFICATION_GRACE_MS)
-	}
-
-	const deferPendingNotificationUntilCompactionFinishes = () => {
-		clearPendingCompactionNotificationTimer()
-		if (!pendingNotification) return
-		pendingNotificationAfterCompaction = pendingNotification
-		if (pendingNotificationTimer) clearTimeout(pendingNotificationTimer)
-		pendingNotificationTimer = undefined
-		pendingNotification = undefined
-		notificationGeneration++
-	}
-
 	const resetCompletionTracking = () => {
-		retryAttempt = 0
-		overflowRecoveryAttempted = false
+		latestAgentEndMessages = undefined
 		clearPendingNotification()
-	}
-
-	const shouldSuppressTransientError = (
-		message: AssistantRecord,
-		event: unknown,
-		ctx: ExtensionContext,
-	): boolean => {
-		if (asObject(event)?.willRetry === true) {
-			retryAttempt++
-			return true
-		}
-
-		if (isOverflowError(message, ctx)) {
-			const settings = compactionSettings(ctx.cwd)
-			if (settings.enabled && !overflowRecoveryAttempted) {
-				overflowRecoveryAttempted = true
-				return true
-			}
-			return false
-		}
-
-		if (!isRetryableAgentError(message, ctx)) return false
-
-		const settings = retrySettings(ctx.cwd)
-		if (!settings.enabled || retryAttempt >= settings.maxRetries) return false
-		retryAttempt++
-		return true
 	}
 
 	const showOverlay = async (ctx: ExtensionCommandContext) => {
@@ -1007,6 +767,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 	})
 
 	pi.on("session_shutdown", () => {
+		latestAgentEndMessages = undefined
 		clearPendingNotification()
 		cleanupFocusTracking?.()
 		cleanupFocusTracking = undefined
@@ -1027,27 +788,19 @@ export default function notifyExtension(pi: ExtensionAPI) {
 		clearPendingNotification()
 	})
 
-	pi.on("session_before_compact", () => {
-		deferPendingNotificationUntilCompactionFinishes()
+	pi.on("agent_end", (event) => {
+		latestAgentEndMessages = event.messages
 	})
 
-	pi.on("session_compact", (_event, ctx) => {
-		clearPendingCompactionNotificationTimer()
-		const notification = pendingNotificationAfterCompaction
-		pendingNotificationAfterCompaction = undefined
-		if (notification)
-			scheduleNotification(ctx, notification.title, notification.body)
-	})
-
-	pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+	pi.on("agent_settled", async (_event, ctx: ExtensionContext) => {
+		const messages = latestAgentEndMessages
+		latestAgentEndMessages = undefined
 		if (!ctx.hasUI || shouldSuppressForRecentFocus()) return
 
-		const assistant = lastAssistantMessage(event.messages)
+		const assistant = lastAssistantMessage(messages)
 		if (assistant?.stopReason === "aborted") return
 
 		if (assistant?.stopReason === "error") {
-			if (shouldSuppressTransientError(assistant, event, ctx)) return
-			retryAttempt = 0
 			scheduleNotification(
 				ctx,
 				ERROR_TOAST_TITLE,
@@ -1056,14 +809,7 @@ export default function notifyExtension(pi: ExtensionAPI) {
 			return
 		}
 
-		retryAttempt = 0
-		overflowRecoveryAttempted = false
-		const body = toastBody(ctx, event as { messages?: unknown })
-		if (shouldDeferForLikelyCompaction(assistant, ctx)) {
-			scheduleNotificationAfterCompaction(ctx, TOAST_TITLE, body)
-			return
-		}
-		scheduleNotification(ctx, TOAST_TITLE, body)
+		scheduleNotification(ctx, TOAST_TITLE, toastBody(ctx, { messages }))
 	})
 
 	pi.registerCommand("notify", {
