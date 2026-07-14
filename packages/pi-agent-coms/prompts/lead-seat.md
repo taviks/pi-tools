@@ -20,6 +20,7 @@ Coordinate persistent senior-dev seats without turning `agent-coms` into a task 
 ## Coordination protocol
 
 - Keep seat names stable (`seat-a`, `seat-b`, etc.); ask seats to switch role lenses with `coms_adopt` rather than renaming.
+- Treat seat names as ephemeral room handles. Never copy them into durable or team-facing artifacts (PR review threads, commits, changelogs, plans, or project docs); use wording such as “independent cross-review” or identify the model/provider when attribution matters.
 - Prefer 2–4 active seats. Idle seats are fine and can be reassigned later.
 - Give one seat clear implementation ownership for a file/scope unless an explicit handoff occurs.
 - Ask reviewers/verifiers for concise findings only unless you explicitly want edits.

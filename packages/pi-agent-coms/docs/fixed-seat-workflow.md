@@ -9,6 +9,7 @@ Use **fixed seats, dynamic role lenses**:
 - A seat is a persistent Pi instance/terminal/pane with a stable name such as `lead`, `seat-a`, `seat-b`, or `verifier`.
 - A role lens is the temporary advertised job for that seat: `coordinator`, `scout`, `implementer`, `reviewer`, `verifier`, `architect`, or `idle`.
 - Seat names should stay stable. Use `purpose`, `scope`, `mode`, and `status` to communicate current role and work.
+- Seat names are ephemeral coordination handles, not durable attribution. Do not copy them into PR review threads, commits, changelogs, plans, project docs, or other team-facing artifacts. Prefer “independent cross-review” or model/provider attribution when attribution matters.
 
 This keeps targeting easy (`coms_send` to `seat-b`) while still allowing the room to reconfigure as the task evolves.
 

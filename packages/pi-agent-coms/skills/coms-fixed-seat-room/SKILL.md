@@ -15,6 +15,7 @@ Use **fixed seats, dynamic role lenses**:
 
 - Stable seat names: `lead`, `seat-a`, `seat-b`, `seat-c`.
 - Dynamic roles via `coms_adopt`: `coordinator`, `scout`, `implementer`, `reviewer`, `verifier`, `architect`, `idle`.
+- Seat names are ephemeral coordination handles, not durable attribution. Omit them from team-facing artifacts such as PR review threads, commits, changelogs, plans, and project docs; use generic cross-review wording or model/provider attribution when it matters.
 - Keep `agent-coms` distinct from subagent orchestration:
   - use coms for persistent peers, status, and targeted asks;
   - use subagents for bounded one-shot fan-out/fan-in.
