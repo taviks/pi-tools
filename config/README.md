@@ -12,6 +12,10 @@ Versioned, reviewable Pi config that can be symlinked into `~/.pi/agent`.
 - `agent/settings.template.json` — example global package/settings config.
 - `project/example/settings.template.json` — example project-local config.
 
+The managed keybindings only customize newline/submit behavior, so Pi's built-in `Ctrl+X` shortcut for copying the last assistant message remains available.
+
+Use `pi config -l` to enable or disable trusted project-local package resources; inside `pi config`, Tab switches between global and project scopes. Project-local settings and resources remain subject to Pi's project-trust flow.
+
 ## Deploy
 
 ```bash

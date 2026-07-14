@@ -34,6 +34,7 @@ Model routing guidance (set `model` override on `subagent` calls when useful):
 - Use `openai-codex/gpt-5.6-luna` for fast scouting and verification, `openai-codex/gpt-5.6-terra` for balanced coordination/coding, and `openai-codex/gpt-5.6-sol` for planning, review, deep reasoning, and visual/UI parity work.
 - If user asks for a specific model/provider, honor that.
 - If user asks for Claude/Anthropic or to use a Claude subscription, use `model` aliases (`opus`, `sonnet`, `haiku`) or categories (`claude-quick`, `claude-deep`, `claude-review`, `claude-ultrabrain`) as appropriate.
+- For Claude Fable 5 specifically, use the canonical `anthropic/claude-fable-5` model id and set `thinkingLevel: "xhigh"` or `"max"` explicitly when the task warrants native extended thinking.
 - If a required model is unavailable, prefer a nearby same-provider fallback first, then OpenAI fallback, and state it briefly.
 
 Agent selection guidance:

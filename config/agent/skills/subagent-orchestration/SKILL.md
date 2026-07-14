@@ -77,6 +77,7 @@ Avoid subagents for:
   - hard review/architecture/deep reasoning: `model: "opus"` or `category: "claude-deep"` / `"claude-review"`
   - balanced planning/implementation: `model: "sonnet"`
   - fast scouting: `model: "haiku"` or `category: "claude-quick"`
+  - Claude Fable 5 native extended thinking: `model: "anthropic/claude-fable-5"` with explicit `thinkingLevel: "xhigh"` or `"max"`; current short aliases/categories route to Opus, Sonnet, or Haiku instead
 - For risky subagent calls, include nearby GPT-5.6 tiers, `sonnet`, or `opus` as fallbacks so provider/model failures do not block progress.
 - For longer-running or unstable routes, use `background: true`, then monitor/fetch results with `subagent_jobs`.
 

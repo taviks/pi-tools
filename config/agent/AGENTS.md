@@ -26,6 +26,7 @@
 - Prefer `ds-reviewer` / `ds-architect` or `deepseek/deepseek-v4-pro` with medium/high reasoning for independent review, architecture critique, broad-context analysis, and challenging plans.
 - When the user asks for Claude/Anthropic or to make use of an active Claude subscription, use subagent `model` aliases (`opus`, `sonnet`, `haiku`) or categories (`claude-quick`, `claude-deep`, `claude-review`, `claude-ultrabrain`) as appropriate.
 - Prefer `anthropic/claude-opus-4-8` (alias `opus`) for hard review/architecture/deep reasoning, `anthropic/claude-sonnet-4-6` (alias `sonnet`) for balanced planning/implementation, and `anthropic/claude-haiku-4-5` (alias `haiku`) for fast scouting when available.
+- For Claude Fable 5, use the canonical `anthropic/claude-fable-5` model id and set `thinkingLevel: "xhigh"` or `"max"` explicitly when native extended thinking is warranted; current short aliases/categories target the Opus/Sonnet/Haiku routes above.
 - Prefer `background: true` for longer-running or unstable subagent routes; monitor/fetch results with `subagent_jobs`.
 - Route GPT-5.6 subagents by cost/capability: `luna` for fast scouting/verification, `terra` for balanced coordination/implementation, and `sol` for deep planning/review/architecture. Include nearby GPT-5.6 tiers or `sonnet`/`opus` as fallbacks for risky calls.
 

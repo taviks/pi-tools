@@ -335,6 +335,10 @@ const copyBlockCompletions = (prefix: string) => {
 }
 
 export default function (pi: ExtensionAPI) {
+	// Pi 0.80.7 owns Ctrl+X (`app.message.copy`) for verbatim transcript/tree
+	// copying. Keep this extension command-only: it adds Markdown-fence
+	// unwrapping, fenced-block selection, session-ID copying, and an editor
+	// fallback when no system clipboard command is available.
 	pi.on("session_start", (_event, ctx) => {
 		installSlashCommandArgumentAutocomplete(
 			ctx,
@@ -344,7 +348,8 @@ export default function (pi: ExtensionAPI) {
 	})
 
 	pi.registerCommand("copy-last", {
-		description: "Copy the last assistant response as Markdown",
+		description:
+			"Copy the last assistant response as Markdown, unwrapping a lone Markdown fence",
 		handler: async (_args, ctx) => {
 			const markdown = extractLastAssistantMarkdown(ctx)
 			if (!markdown) {
