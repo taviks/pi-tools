@@ -64,7 +64,7 @@ Ready notifications prefer terminal-native toast protocols when available (Ghost
 
 Goal loop can be started explicitly with `/goal <objective>`. It also auto-starts from a `Goal:`/`goal:` prompt header when no goal is already active; if the header has no same-line text, the next non-empty line block is used as the objective.
 
-`/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); Pi 0.80.6 exposes `max` only for models that support it, including GPT-5.6 and adaptive Claude models. `/effort status` shows the current level and available levels.
+`/effort` with no argument opens a compact picker for the current model's supported reasoning levels, using left/right arrows to choose and Enter to apply. `/effort <level>` sets an explicit level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); Pi exposes `max` only for models that support it; as of Pi 0.80.7 this includes GPT-5.6, adaptive Claude models, and Claude Fable 5 (native `xhigh`/`max`). `/effort status` shows the current level and available levels.
 
 The reload session-state extension snapshots the active session's model and thinking level before `/reload` and `/new`, then restores them after the session transition. This avoids another Pi pane's most recently saved global defaults leaking into the active pane when multiple sessions use different models or reasoning levels.
 
