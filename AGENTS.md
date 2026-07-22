@@ -14,11 +14,12 @@
 Use the root workspace unless a task explicitly says otherwise:
 
 ```bash
-pnpm -s check          # layout JSON checks + Prettier format check + TypeScript typecheck
+pnpm -s check          # layout + formatting + TypeScript + pi-agent-coms tests
 pnpm -s check:layout   # directory/template/JSON validation
 pnpm -s format         # Prettier write using the repo's VS Code-compatible defaults
 pnpm -s format:check   # Prettier check
 pnpm -s typecheck      # tsc --noEmit
+pnpm -s test:coms      # focused pi-agent-coms tests
 ```
 
 `pnpm -s check` is the default validation gate for code/config changes.

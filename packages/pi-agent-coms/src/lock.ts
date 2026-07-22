@@ -46,7 +46,10 @@ function tryClearStaleLock(lockPath: string): void {
  * Exclusive lock file for a directory. Uses O_EXCL create; stale locks from dead PIDs
  * are cleared best-effort before retrying.
  */
-export function acquireDirLockSync(lockDir: string, lockName = ".registry.lock"): () => void {
+export function acquireDirLockSync(
+	lockDir: string,
+	lockName = ".registry.lock",
+): () => void {
 	fs.mkdirSync(lockDir, { recursive: true })
 	const lockPath = path.join(lockDir, lockName)
 	let lastError: unknown

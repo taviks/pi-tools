@@ -45,12 +45,10 @@ Use Node.js 22.19+ and the root pnpm workspace for local checks:
 ```bash
 corepack enable
 pnpm install
-pnpm -s check:layout
-pnpm -s format:check
-pnpm -s typecheck
+pnpm -s check
 ```
 
-`check:layout` verifies the expected package/config directories and JSON templates. `format:check` verifies Prettier formatting with the repo's VS Code-compatible defaults. `typecheck` runs TypeScript across the root extensions and companion packages.
+`check` verifies the expected package/config directories and JSON templates, checks Prettier formatting with the repo's VS Code-compatible defaults, runs TypeScript across the root extensions and companion packages, and runs the `pi-agent-coms` tests. The component commands remain available as `check:layout`, `format:check`, `typecheck`, and `test:coms`.
 
 ## What's in the root package
 
