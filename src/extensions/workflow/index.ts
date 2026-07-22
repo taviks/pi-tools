@@ -14,6 +14,7 @@ import {
 	getFinalOutput,
 	getResultRunState,
 	runSingleAgent,
+	THINKING_LEVELS,
 	type OnUpdateCallback,
 	type SingleResult,
 	type SubagentDetails,
@@ -21,15 +22,6 @@ import {
 	type UsageStats,
 } from "../subagent/index.js"
 
-const THINKING_LEVELS = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-] as const
 const DEFAULT_MAX_CONCURRENCY = 4
 const HARD_MAX_CONCURRENCY = 10
 const DEFAULT_MAX_AGENTS = 12

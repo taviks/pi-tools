@@ -16,9 +16,12 @@ import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import type { AgentToolResult } from "@earendil-works/pi-agent-core"
+import type {
+	AgentToolResult,
+	ThinkingLevel as SdkThinkingLevel,
+} from "@earendil-works/pi-agent-core"
 import type { Message } from "@earendil-works/pi-ai"
-import { StringEnum } from "@earendil-works/pi-ai"
+import { clampThinkingLevel, StringEnum } from "@earendil-works/pi-ai"
 import {
 	keyHint,
 	type ExtensionAPI,
@@ -110,7 +113,11 @@ const RETRYABLE_FAILURE_PATTERNS = [
 ]
 
 const UNSTABLE_MODEL_PATTERNS = [/gemini/i, /minimax/i, /grok/i]
-const THINKING_LEVELS = [
+// Runtime universe of thinking levels, kept in lockstep with the SDK union:
+// - `satisfies` fails to compile if a listed level is removed/renamed upstream.
+// - `MissingSdkThinkingLevels` fails to compile if the SDK adds a level
+//   that is missing from this list.
+export const THINKING_LEVELS = [
 	"off",
 	"minimal",
 	"low",
@@ -118,8 +125,12 @@ const THINKING_LEVELS = [
 	"high",
 	"xhigh",
 	"max",
-] as const
+] as const satisfies readonly SdkThinkingLevel[]
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
+type AssertNever<T extends never> = T
+type MissingSdkThinkingLevels = AssertNever<
+	Exclude<SdkThinkingLevel, ThinkingLevel>
+>
 
 const CANONICAL_MODEL_IDS: Record<string, string> = {
 	sol: "openai-codex/gpt-5.6-sol",
@@ -410,6 +421,30 @@ function normalizeThinkingLevel(
 	return (THINKING_LEVELS as readonly string[]).includes(normalized)
 		? (normalized as ThinkingLevel)
 		: undefined
+}
+
+/**
+ * Clamp a requested thinking level to what the target model actually
+ * supports, using the same pi-ai helper the host session uses for
+ * getAvailableThinkingLevels(). Falls back to the requested level when the
+ * model cannot be resolved in the registry; the child provider clamps
+ * internally either way, so this only keeps our reporting honest.
+ */
+function clampThinkingLevelForModel(
+	model: string | undefined,
+	thinkingLevel: ThinkingLevel | undefined,
+	ctx?: ExtensionContext,
+): ThinkingLevel | undefined {
+	if (!model || !thinkingLevel) return thinkingLevel
+	const slashIndex = model.indexOf("/")
+	if (slashIndex <= 0) return thinkingLevel
+	const registry = ctx?.modelRegistry ?? latestUiContext?.modelRegistry
+	const resolved = registry?.find(
+		model.slice(0, slashIndex),
+		model.slice(slashIndex + 1),
+	)
+	if (!resolved) return thinkingLevel
+	return clampThinkingLevel(resolved, thinkingLevel)
 }
 
 function canonicalizeModelBase(model: string | undefined): string | undefined {
@@ -1999,10 +2034,16 @@ async function runSingleAgentAttempt(
 	selectedModel?: string,
 	selectedThinkingLevel?: ThinkingLevel,
 	category?: string,
+	modelContext?: ExtensionContext,
 ): Promise<SingleResult> {
+	const effectiveThinkingLevel = clampThinkingLevelForModel(
+		selectedModel,
+		selectedThinkingLevel,
+		modelContext,
+	)
 	const args: string[] = ["--mode", "json", "-p", "--no-session"]
 	if (selectedModel) args.push("--model", selectedModel)
-	if (selectedThinkingLevel) args.push("--thinking", selectedThinkingLevel)
+	if (effectiveThinkingLevel) args.push("--thinking", effectiveThinkingLevel)
 	if (agent.tools && agent.tools.length > 0)
 		args.push("--tools", agent.tools.join(","))
 
@@ -2028,7 +2069,7 @@ async function runSingleAgentAttempt(
 			turns: 0,
 		},
 		model: selectedModel,
-		thinkingLevel: selectedThinkingLevel,
+		thinkingLevel: effectiveThinkingLevel,
 		category,
 		step,
 		runState: "running",
@@ -2258,6 +2299,7 @@ export async function runSingleAgent(
 			undefined,
 			plan.thinkingLevel,
 			plan.category,
+			modelContext,
 		)
 		result.attempts = 1
 		if (retryLog.length > 0) result.retryLog = [...retryLog]
@@ -2293,6 +2335,7 @@ export async function runSingleAgent(
 			candidate,
 			plan.thinkingLevel,
 			plan.category,
+			modelContext,
 		)
 		result.attempts = attempts
 		if (retryLog.length > 0) result.retryLog = [...retryLog]
@@ -2341,6 +2384,7 @@ export async function runSingleAgent(
 		plan.primaryModel,
 		plan.thinkingLevel,
 		plan.category,
+		modelContext,
 	)
 	result.attempts = 1
 	if (retryLog.length > 0) result.retryLog = [...retryLog]

@@ -18,6 +18,7 @@ import {
 	getFinalOutput,
 	getResultRunState,
 	runSingleAgent,
+	THINKING_LEVELS,
 	type OnUpdateCallback,
 	type SingleResult,
 	type SubagentDetails,
@@ -41,16 +42,6 @@ import {
  *
  * Reuses the subagent runner for model routing, fallbacks, fast-mode, and usage.
  */
-
-const THINKING_LEVELS = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-] as const
 
 const ThinkingLevelSchema = StringEnum(THINKING_LEVELS, {
 	description: "Optional thinking level override.",
