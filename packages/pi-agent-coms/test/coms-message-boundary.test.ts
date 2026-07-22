@@ -242,3 +242,38 @@ test("registry pruning keeps stale live-PID peers and removes dead-PID peers", (
 		fs.rmSync(home, { recursive: true, force: true })
 	}
 })
+
+test("sanitizeThinkingLevel accepts known enum values only", () => {
+	for (const level of [
+		"off",
+		"minimal",
+		"low",
+		"medium",
+		"high",
+		"xhigh",
+		"max",
+	]) {
+		assert.equal(__test.sanitizeThinkingLevel(level), level)
+	}
+	assert.equal(__test.sanitizeThinkingLevel("HIGH"), undefined)
+	assert.equal(__test.sanitizeThinkingLevel("turbo"), undefined)
+	assert.equal(__test.sanitizeThinkingLevel(""), undefined)
+	assert.equal(__test.sanitizeThinkingLevel(undefined), undefined)
+	assert.equal(__test.sanitizeThinkingLevel(3), undefined)
+	assert.equal(__test.sanitizeThinkingLevel(null), undefined)
+})
+
+test("presenceSummary surfaces live thinking level and omits it when absent", () => {
+	assert.equal(
+		__test.presenceSummary({ mode: "reviewing", thinking_level: "high" }),
+		"mode:reviewing · thinking:high",
+	)
+	// thinking (live) and reasoning (advertised) can coexist
+	assert.equal(
+		__test.presenceSummary({ thinking_level: "xhigh", reasoning: "high" }),
+		"thinking:xhigh · reasoning:high",
+	)
+	// undefined thinking level is omitted rather than shown as unknown
+	assert.equal(__test.presenceSummary({ mode: "scouting" }), "mode:scouting")
+	assert.equal(__test.presenceSummary({}), "")
+})

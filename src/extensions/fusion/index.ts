@@ -108,7 +108,7 @@ const PROVIDER_PRIORITY = [
 	"openai-codex",
 	"deepseek",
 	"google",
-	"x-ai",
+	"xai",
 	"mistral",
 ]
 

@@ -51,6 +51,17 @@ const MAX_STATUS_CHARS = 240
 const MAX_MODE_CHARS = 48
 const MAX_REASONING_CHARS = 80
 
+const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const
+type ThinkingLevel = (typeof THINKING_LEVELS)[number]
+
 const COLORS = [
 	"#72F1B8",
 	"#36F9F6",
@@ -333,6 +344,7 @@ interface RegistryEntry {
 	status?: string
 	mode?: string
 	reasoning?: string
+	thinking_level?: ThinkingLevel
 	model: string
 	color: string
 	pid: number
@@ -359,6 +371,7 @@ interface AgentCard {
 	status?: string
 	mode?: string
 	reasoning?: string
+	thinking_level?: ThinkingLevel
 	model: string
 	color: string
 	cwd: string
@@ -538,18 +551,35 @@ function optionalDisplayText(value: unknown, max = 500): string | undefined {
 	return text || undefined
 }
 
+function sanitizeThinkingLevel(value: unknown): ThinkingLevel | undefined {
+	return typeof value === "string" &&
+		(THINKING_LEVELS as readonly string[]).includes(value)
+		? (value as ThinkingLevel)
+		: undefined
+}
+
+function liveThinkingLevel(pi: ExtensionAPI): ThinkingLevel | undefined {
+	try {
+		return sanitizeThinkingLevel(pi.getThinkingLevel?.())
+	} catch {
+		return undefined
+	}
+}
+
 function presenceSummary(agent: {
 	purpose?: string
 	scope?: string
 	status?: string
 	mode?: string
 	reasoning?: string
+	thinking_level?: ThinkingLevel
 }): string {
 	const parts: string[] = []
 	if (agent.mode) parts.push(`mode:${agent.mode}`)
 	if (agent.status) parts.push(agent.status)
 	if (agent.scope) parts.push(`scope:${agent.scope}`)
 	if (agent.purpose) parts.push(agent.purpose)
+	if (agent.thinking_level) parts.push(`thinking:${agent.thinking_level}`)
 	if (agent.reasoning) parts.push(`reasoning:${agent.reasoning}`)
 	return parts.join(" · ")
 }
@@ -560,6 +590,7 @@ function presenceSuffix(agent: {
 	status?: string
 	mode?: string
 	reasoning?: string
+	thinking_level?: ThinkingLevel
 }): string {
 	const summary = presenceSummary(agent)
 	return summary ? ` — ${summary}` : ""
@@ -835,6 +866,7 @@ function readRegistryEntries(room: string): RegistryEntry[] {
 						parsed.reasoning,
 						MAX_REASONING_CHARS,
 					),
+					thinking_level: sanitizeThinkingLevel(parsed.thinking_level),
 					model: safeDisplayText(parsed.model || "unknown", 80),
 					cwd: safeDisplayText(parsed.cwd || "", 500),
 					color: isValidHexColor(parsed.color)
@@ -981,6 +1013,7 @@ function makeIdentity(pi: ExtensionAPI, ctx: ExtensionContext): Identity {
 		name,
 		room,
 		purpose,
+		thinking_level: liveThinkingLevel(pi),
 		model: ctx.model?.id ?? "unknown",
 		color,
 		pid: process.pid,
@@ -1223,7 +1256,10 @@ type CompletionPeer = Pick<
 	RegistryEntry,
 	"session_id" | "name" | "model" | "purpose"
 > &
-	Pick<Partial<RegistryEntry>, "scope" | "status" | "mode" | "reasoning">
+	Pick<
+		Partial<RegistryEntry>,
+		"scope" | "status" | "mode" | "reasoning" | "thinking_level"
+	>
 
 function peerCompletionItems(
 	command: string,
@@ -1689,7 +1725,9 @@ export const __test = {
 	isComsMessage,
 	isManagedEndpoint,
 	messageContainsComsMessage,
+	presenceSummary,
 	pruneDeadEntries,
+	sanitizeThinkingLevel,
 	shouldExpireStrandedAutoReply,
 	targetSessionMatches,
 	textContainsComsMarker,
@@ -1771,7 +1809,10 @@ function formatProfile(identity: Identity): string {
 		`scope: ${identity.scope || "(none)"}`,
 		`status: ${identity.status || "(none)"}`,
 		`mode: ${identity.mode || "(none)"}`,
-		`reasoning: ${identity.reasoning || "(not advertised)"}`,
+		...(identity.thinking_level
+			? [`thinking: ${identity.thinking_level} (live)`]
+			: []),
+		`reasoning: ${identity.reasoning || "(not advertised)"} (advertised)`,
 		`color: ${identity.color}`,
 		`updated: ${identity.presence_updated_at || "(session start)"}`,
 	].join("\n")
@@ -2286,7 +2327,7 @@ const ConfigParams = Type.Object({
 	reasoning: Type.Optional(
 		Type.String({
 			description:
-				"Advertised reasoning setting/preference only; does not change Pi runtime reasoning.",
+				"Advertised reasoning setting/preference label only; does not change Pi runtime reasoning. The live thinking level is auto-advertised separately.",
 		}),
 	),
 	color: Type.Optional(
@@ -2760,6 +2801,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			status: identity?.status,
 			mode: identity?.mode,
 			reasoning: identity?.reasoning,
+			thinking_level: liveThinkingLevel(pi) ?? identity?.thinking_level,
 			model: ctx?.model?.id ?? identity?.model ?? "unknown",
 			color: identity?.color ?? "#36F9F6",
 			cwd: identity?.cwd ?? ctx?.cwd ?? process.cwd(),
@@ -2993,6 +3035,9 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 				status: card?.status ?? entry.status,
 				mode: card?.mode ?? entry.mode,
 				reasoning: card?.reasoning ?? entry.reasoning,
+				thinking_level:
+					sanitizeThinkingLevel(card?.thinking_level) ??
+					entry.thinking_level,
 				color: card?.color ?? entry.color,
 				alive: Boolean(card),
 				context_used_pct: card?.context_used_pct ?? null,
@@ -3728,6 +3773,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 			status: identity.status,
 			mode: identity.mode,
 			reasoning: identity.reasoning,
+			thinking_level: liveThinkingLevel(pi) ?? identity.thinking_level,
 			model: currentCtx?.model?.id ?? identity.model,
 			color: identity.color,
 			pid: process.pid,
@@ -4681,7 +4727,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		name: "coms_config",
 		label: "Coms Config",
 		description:
-			"Update this session's advertised agent-coms profile/presence: name, purpose, scope, status, mode, reasoning label, or color. This does not change Pi runtime model, reasoning, tools, room, or system prompt.",
+			"Update this session's advertised agent-coms profile/presence: name, purpose, scope, status, mode, reasoning label, or color. This does not change Pi runtime model, reasoning, tools, room, or system prompt. The agent's live thinking level is auto-advertised separately and does not need to be set here.",
 		promptSnippet: "Update this agent's advertised coms profile or presence.",
 		promptGuidelines: [
 			"Use coms_config at the start of coordinated work to advertise your role, scope, and current status.",
@@ -4756,7 +4802,7 @@ export default function agentComsExtension(pi: ExtensionAPI) {
 		name: "coms_adopt",
 		label: "Coms Adopt",
 		description:
-			"Adopt a standard role lens for a fixed senior-dev seat: coordinator, scout, implementer, reviewer, verifier, architect, or idle. Updates advertised purpose/mode/status/scope only; it does not change Pi runtime config.",
+			"Adopt a standard role lens for a fixed senior-dev seat: coordinator, scout, implementer, reviewer, verifier, architect, or idle. Updates advertised purpose/mode/status/scope only; it does not change Pi runtime config. The agent's live thinking level is auto-advertised separately.",
 		promptSnippet: "Adopt a standard coms role lens for this fixed seat.",
 		promptGuidelines: [
 			"Use coms_adopt when a fixed seat switches role lenses for a coordinated room workflow.",
