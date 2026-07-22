@@ -88,7 +88,6 @@ const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
 	"openai-codex/gpt-5.6-terra": 4,
 	"openai-codex/gpt-5.6-luna": 4,
 	"openai-codex/gpt-5.5": 4,
-	"openai-codex/gpt-5.3-codex": 4,
 }
 
 const RETRYABLE_FAILURE_PATTERNS = [
@@ -132,7 +131,6 @@ const CANONICAL_MODEL_IDS: Record<string, string> = {
 	"gpt-5.5": "openai-codex/gpt-5.5",
 	"gpt-5.4": "openai-codex/gpt-5.4",
 	"gpt-5.4-mini": "openai-codex/gpt-5.4-mini",
-	"gpt-5.3-codex": "openai-codex/gpt-5.3-codex",
 	"gpt-5.3-codex-spark": "openai-codex/gpt-5.3-codex-spark",
 	claude: "anthropic/claude-opus-4-8",
 	opus: "anthropic/claude-opus-4-8",
@@ -155,7 +153,6 @@ const OPENAI_STRONG_FALLBACK_MODELS = [
 	"openai-codex/gpt-5.6-terra",
 	"openai-codex/gpt-5.5",
 	"openai-codex/gpt-5.4",
-	"openai-codex/gpt-5.3-codex",
 ]
 const OPENAI_FAST_FALLBACK_MODELS = [
 	"openai-codex/gpt-5.6-luna",

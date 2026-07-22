@@ -59,10 +59,10 @@
 		"typebox": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "0.80.10",
-		"@earendil-works/pi-ai": "0.80.10",
-		"@earendil-works/pi-coding-agent": "0.80.10",
-		"@earendil-works/pi-tui": "0.80.10",
+		"@earendil-works/pi-agent-core": "0.81.1",
+		"@earendil-works/pi-ai": "0.81.1",
+		"@earendil-works/pi-coding-agent": "0.81.1",
+		"@earendil-works/pi-tui": "0.81.1",
 		"@types/node": "24.12.4",
 		"@types/turndown": "^5.0.5",
 		"prettier": "3.7.4",
